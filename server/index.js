@@ -118,6 +118,92 @@ const initializeSchema = async (pool) => {
 // Helper function to generate ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// Helper function to format time for SQL Server
+const formatTimeForSQL = (timeString) => {
+  if (!timeString) return null;
+  
+  try {
+    // Remove any extra whitespace
+    timeString = timeString.trim();
+    
+    // If it's already in HH:MM:SS format, return as is
+    if (timeString.match(/^\d{1,2}:\d{2}:\d{2}$/)) {
+      return timeString;
+    }
+    
+    // If it's in HH:MM format, add seconds
+    if (timeString.match(/^\d{1,2}:\d{2}$/)) {
+      return timeString + ':00';
+    }
+    
+    // Try to parse and reformat
+    const parts = timeString.split(':');
+    if (parts.length >= 2) {
+      const hours = parseInt(parts[0], 10);
+      const minutes = parseInt(parts[1], 10);
+      
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+      }
+    }
+  } catch (error) {
+    console.error('Error parsing time:', error);
+  }
+  
+  return null;
+};
+
+// Helper function to format time for display (HH:MM)
+const formatTimeForDisplay = (timeString) => {
+  if (!timeString) return '';
+  
+  try {
+    // If it's a time object from SQL Server, convert to string first
+    if (typeof timeString === 'object' && timeString.getHours) {
+      const hours = timeString.getHours().toString().padStart(2, '0');
+      const minutes = timeString.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    }
+    
+    // If it's already a string, parse it
+    const timeStr = timeString.toString();
+    
+    // Handle HH:MM:SS.sssssss format from SQL Server
+    if (timeStr.includes(':')) {
+      const parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0], 10).toString().padStart(2, '0');
+        const minutes = parseInt(parts[1], 10).toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
+      }
+    }
+    
+    return timeStr;
+  } catch (error) {
+    console.error('Error formatting time for display:', error);
+    return timeString;
+  }
+};
+
+// Helper function to format date for display (YYYY-MM-DD)
+const formatDateForDisplay = (dateValue) => {
+  if (!dateValue) return '';
+  
+  try {
+    const date = new Date(dateValue);
+    if (isNaN(date.getTime())) return dateValue;
+    
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    
+    return `${year}-${month}-${day}`;
+  } catch (error) {
+    console.error('Error formatting date for display:', error);
+    return dateValue;
+  }
+};
+
 // Users endpoints
 app.get('/api/users', async (req, res) => {
   try {
@@ -357,7 +443,15 @@ app.get('/api/transports', async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
-    res.json(result.recordset);
+    
+    // Format the data for display
+    const formattedTransports = result.recordset.map(transport => ({
+      ...transport,
+      date: formatDateForDisplay(transport.date),
+      time: formatTimeForDisplay(transport.time)
+    }));
+    
+    res.json(formattedTransports);
   } catch (error) {
     console.error('Error fetching transports:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -369,22 +463,44 @@ app.post('/api/transports', async (req, res) => {
     const { date, time, userId, driverId, destinationId, notes } = req.body;
     const id = generateId();
     const pool = await poolPromise;
-	    
+    
+    // Format time for SQL Server
+    const formattedTime = formatTimeForSQL(time);
+    if (!formattedTime) {
+      console.error('Invalid time format received:', time);
+      return res.status(400).json({ error: 'Invalid time format. Please use HH:MM format.' });
+    }
+    
+    console.log('Creating transport with:', { date, time, formattedTime, userId, driverId, destinationId });
+    
+    // Use string interpolation instead of parameterized query for time
+    const query = `
+      INSERT INTO Transports (id, date, time, userId, driverId, destinationId, notes) 
+      VALUES (@id, @date, '${formattedTime}', @userId, @driverId, @destinationId, @notes)
+    `;
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('date', sql.Date, date)
-      .input('time', sql.Time, time)
       .input('userId', sql.NVarChar, userId)
       .input('driverId', sql.NVarChar, driverId)
       .input('destinationId', sql.NVarChar, destinationId)
       .input('notes', sql.NVarChar, notes || null)
-      .query('INSERT INTO Transports (id, date, time, userId, driverId, destinationId, notes) VALUES (@id, @date, @time, @userId, @driverId, @destinationId, @notes)');
+      .query(query);
     
     const result = await pool.request()
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    res.status(201).json(result.recordset[0]);
+    // Format the response data
+    const transport = result.recordset[0];
+    const formattedTransport = {
+      ...transport,
+      date: formatDateForDisplay(transport.date),
+      time: formatTimeForDisplay(transport.time)
+    };
+    
+    res.status(201).json(formattedTransport);
   } catch (error) {
     console.error('Error creating transport:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -397,21 +513,44 @@ app.put('/api/transports/:id', async (req, res) => {
     const { date, time, userId, driverId, destinationId, notes } = req.body;
     const pool = await poolPromise;
     
+    // Format time for SQL Server
+    const formattedTime = formatTimeForSQL(time);
+    if (!formattedTime) {
+      console.error('Invalid time format received:', time);
+      return res.status(400).json({ error: 'Invalid time format. Please use HH:MM format.' });
+    }
+    
+    console.log('Updating transport with:', { date, time, formattedTime, userId, driverId, destinationId });
+    
+    // Use string interpolation instead of parameterized query for time
+    const query = `
+      UPDATE Transports 
+      SET date = @date, time = '${formattedTime}', userId = @userId, driverId = @driverId, destinationId = @destinationId, notes = @notes 
+      WHERE id = @id
+    `;
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('date', sql.Date, date)
-      .input('time', sql.Time, time)
       .input('userId', sql.NVarChar, userId)
       .input('driverId', sql.NVarChar, driverId)
       .input('destinationId', sql.NVarChar, destinationId)
       .input('notes', sql.NVarChar, notes || null)
-      .query('UPDATE Transports SET date = @date, time = @time, userId = @userId, driverId = @driverId, destinationId = @destinationId, notes = @notes WHERE id = @id');
+      .query(query);
     
     const result = await pool.request()
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    res.json(result.recordset[0]);
+    // Format the response data
+    const transport = result.recordset[0];
+    const formattedTransport = {
+      ...transport,
+      date: formatDateForDisplay(transport.date),
+      time: formatTimeForDisplay(transport.time)
+    };
+    
+    res.json(formattedTransport);
   } catch (error) {
     console.error('Error updating transport:', error);
     res.status(500).json({ error: 'Internal server error' });

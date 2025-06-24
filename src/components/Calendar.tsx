@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Transport, User, Driver, Destination } from '../types';
+import TransportModal from './TransportModal';
 
 interface CalendarProps {
   transports: Transport[];
   users: User[];
   drivers: Driver[];
   destinations: Destination[];
+  darkMode: boolean;
   onAddTransport: (transport: Omit<Transport, 'id' | 'createdAt'>) => void;
+  onUpdateTransport: (id: string, transport: Omit<Transport, 'id' | 'createdAt'>) => void;
+  onDeleteTransport: (id: string) => void;
 }
 
 export default function Calendar({ 
@@ -15,11 +19,16 @@ export default function Calendar({
   users, 
   drivers, 
   destinations, 
-  onAddTransport 
+  darkMode,
+  onAddTransport,
+  onUpdateTransport,
+  onDeleteTransport
 }: CalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedTransport, setSelectedTransport] = useState<Transport | null>(null);
+  const [draggedTransport, setDraggedTransport] = useState<Transport | null>(null);
   const [formData, setFormData] = useState({
     date: '',
     time: '',
@@ -64,11 +73,38 @@ export default function Calendar({
     return transports.filter(t => t.date === date);
   };
 
-  const handleDateClick = (day: number) => {
+  const handleDateClick = (day: number, event: React.MouseEvent) => {
+    // Solo se non stiamo cliccando su un evento
+    if ((event.target as HTMLElement).closest('.transport-event')) {
+      return;
+    }
+    
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     setSelectedDate(dateStr);
-    setFormData({ ...formData, date: dateStr });
-    setShowForm(true);
+    setSelectedTransport(null);
+    setFormData({ 
+      date: dateStr,
+      time: '',
+      userId: '',
+      driverId: '',
+      destinationId: '',
+      notes: ''
+    });
+    setShowModal(true);
+  };
+
+  const handleTransportClick = (transport: Transport, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSelectedTransport(transport);
+    setFormData({
+      date: transport.date,
+      time: transport.time,
+      userId: transport.userId,
+      driverId: transport.driverId,
+      destinationId: transport.destinationId,
+      notes: transport.notes || ''
+    });
+    setShowModal(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -77,7 +113,20 @@ export default function Calendar({
       alert('Compila tutti i campi obbligatori');
       return;
     }
-    onAddTransport(formData);
+
+    if (selectedTransport) {
+      onUpdateTransport(selectedTransport.id, formData);
+    } else {
+      onAddTransport(formData);
+    }
+    
+    handleCloseModal();
+  };
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setSelectedTransport(null);
+    setSelectedDate(null);
     setFormData({
       date: '',
       time: '',
@@ -86,8 +135,43 @@ export default function Calendar({
       destinationId: '',
       notes: ''
     });
-    setShowForm(false);
-    setSelectedDate(null);
+  };
+
+  const handleDragStart = (transport: Transport, event: React.DragEvent) => {
+    setDraggedTransport(transport);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/html', '');
+  };
+
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (targetDate: string, event: React.DragEvent) => {
+    event.preventDefault();
+    
+    if (draggedTransport && draggedTransport.date !== targetDate) {
+      const updatedTransport = {
+        ...draggedTransport,
+        date: targetDate
+      };
+      
+      onUpdateTransport(draggedTransport.id, {
+        date: updatedTransport.date,
+        time: updatedTransport.time,
+        userId: updatedTransport.userId,
+        driverId: updatedTransport.driverId,
+        destinationId: updatedTransport.destinationId,
+        notes: updatedTransport.notes || ''
+      });
+    }
+    
+    setDraggedTransport(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTransport(null);
   };
 
   // --- VISTA MESE ---
@@ -101,33 +185,49 @@ export default function Calendar({
       const dayTransports = getTransportsForDate(dateStr);
       const isToday = today.toISOString().split('T')[0] === dateStr;
       const isPast = new Date(dateStr) < new Date(today.toISOString().split('T')[0]);
+      const isDragOver = draggedTransport && draggedTransport.date !== dateStr;
+      
       days.push(
         <div
           key={d}
           className={`p-2 min-h-[120px] border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors ${
             isToday ? 'bg-blue-50 border-blue-300' : ''
-          } ${isPast ? 'bg-gray-50' : ''}`}
-          onClick={() => handleDateClick(d)}
+          } ${isPast ? 'bg-gray-50' : ''} ${
+            isDragOver ? 'bg-green-50 border-green-300' : ''
+          } ${darkMode ? 'border-gray-600 hover:bg-gray-700' : ''}`}
+          onClick={(e) => handleDateClick(d, e)}
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleDrop(dateStr, e)}
         >
-          <div className={`text-sm font-medium mb-1 ${isToday ? 'text-blue-600' : isPast ? 'text-gray-400' : 'text-gray-900'}`}>
+          <div className={`text-sm font-medium mb-1 ${
+            isToday ? 'text-blue-600' : isPast ? (darkMode ? 'text-gray-500' : 'text-gray-400') : (darkMode ? 'text-white' : 'text-gray-900')
+          }`}>
             {d}
           </div>
           <div className="space-y-1">
             {dayTransports.slice(0, 3).map((transport) => {
               const user = users.find(u => u.id === transport.userId);
               const destination = destinations.find(d => d.id === transport.destinationId);
+              const isDragging = draggedTransport?.id === transport.id;
+              
               return (
                 <div
                   key={transport.id}
-                  className="text-xs bg-blue-100 text-blue-800 p-1 rounded truncate"
+                  className={`transport-event text-xs bg-blue-100 text-blue-800 p-1 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors ${
+                    isDragging ? 'opacity-50' : ''
+                  } ${darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''}`}
                   title={`${transport.time} - ${user?.name} → ${destination?.name}`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(transport, e)}
+                  onDragEnd={handleDragEnd}
+                  onClick={(e) => handleTransportClick(transport, e)}
                 >
                   {transport.time} {user?.name}
                 </div>
               );
             })}
             {dayTransports.length > 3 && (
-              <div className="text-xs text-gray-500">
+              <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 +{dayTransports.length - 3} altri
               </div>
             )}
@@ -140,31 +240,57 @@ export default function Calendar({
 
   // --- VISTA SETTIMANA ---
   const renderWeekView = () => {
-    // Trova il primo giorno della settimana corrente
     const curr = new Date(currentDate);
     const weekStart = new Date(curr.setDate(curr.getDate() - curr.getDay()));
     const days = [];
+    
     for (let i = 0; i < 7; i++) {
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + i);
       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       const dayTransports = getTransportsForDate(dateStr);
       const isToday = today.toISOString().split('T')[0] === dateStr;
+      const isDragOver = draggedTransport && draggedTransport.date !== dateStr;
+      
       days.push(
-        <div key={i} className={`flex-1 border p-2 ${isToday ? 'bg-blue-50 border-blue-300' : ''}`}>
-          <div className={`font-semibold mb-2 ${isToday ? 'text-blue-600' : ''}`}>
+        <div 
+          key={i} 
+          className={`flex-1 border p-2 min-h-[200px] ${
+            isToday ? 'bg-blue-50 border-blue-300' : ''
+          } ${isDragOver ? 'bg-green-50 border-green-300' : ''} ${
+            darkMode ? 'border-gray-600 bg-gray-800' : ''
+          }`}
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleDrop(dateStr, e)}
+          onClick={(e) => handleDateClick(date.getDate(), e)}
+        >
+          <div className={`font-semibold mb-2 ${
+            isToday ? 'text-blue-600' : (darkMode ? 'text-white' : 'text-gray-900')
+          }`}>
             {weekDays[i]} {date.getDate()}/{date.getMonth() + 1}
           </div>
           <div className="space-y-1">
-            {dayTransports.length === 0 && <div className="text-xs text-gray-400">Nessun trasporto</div>}
+            {dayTransports.length === 0 && (
+              <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>
+                Nessun trasporto
+              </div>
+            )}
             {dayTransports.map((transport) => {
               const user = users.find(u => u.id === transport.userId);
               const destination = destinations.find(d => d.id === transport.destinationId);
+              const isDragging = draggedTransport?.id === transport.id;
+              
               return (
                 <div
                   key={transport.id}
-                  className="text-xs bg-blue-100 text-blue-800 p-1 rounded truncate"
+                  className={`transport-event text-xs bg-blue-100 text-blue-800 p-1 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors ${
+                    isDragging ? 'opacity-50' : ''
+                  } ${darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''}`}
                   title={`${transport.time} - ${user?.name} → ${destination?.name}`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(transport, e)}
+                  onDragEnd={handleDragEnd}
+                  onClick={(e) => handleTransportClick(transport, e)}
                 >
                   {transport.time} {user?.name}
                 </div>
@@ -181,24 +307,34 @@ export default function Calendar({
   const renderDayView = () => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayTransports = getTransportsForDate(dateStr);
+    
     return (
-      <div className="border rounded p-4">
-        <div className="font-semibold mb-2">
+      <div className={`border rounded p-4 ${darkMode ? 'border-gray-600 bg-gray-800' : ''}`}>
+        <div className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
           {weekDays[currentDate.getDay()]} {day}/{month + 1}/{year}
         </div>
-        {dayTransports.length === 0 && <div className="text-gray-400">Nessun trasporto</div>}
+        {dayTransports.length === 0 && (
+          <div className={darkMode ? 'text-gray-400' : 'text-gray-400'}>
+            Nessun trasporto
+          </div>
+        )}
         {dayTransports.map((transport) => {
           const user = users.find(u => u.id === transport.userId);
           const destination = destinations.find(d => d.id === transport.destinationId);
+          
           return (
             <div
               key={transport.id}
-              className="mb-2 p-2 bg-blue-100 text-blue-800 rounded"
-              title={`${transport.time} - ${user?.name} → ${destination?.name}`}
+              className={`transport-event mb-2 p-2 bg-blue-100 text-blue-800 rounded cursor-pointer hover:bg-blue-200 transition-colors ${
+                darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''
+              }`}
+              onClick={(e) => handleTransportClick(transport, e)}
+              title="Clicca per modificare"
             >
               <div><b>Ora:</b> {transport.time}</div>
               <div><b>Utente:</b> {user?.name}</div>
               <div><b>Destinazione:</b> {destination?.name}</div>
+              {transport.notes && <div><b>Note:</b> {transport.notes}</div>}
             </div>
           );
         })}
@@ -210,55 +346,106 @@ export default function Calendar({
     <div className="p-6">
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-3xl font-bold text-gray-900">Calendario Trasporti</h1>
+          <h1 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            Calendario Trasporti
+          </h1>
+          <button
+            onClick={() => {
+              setSelectedTransport(null);
+              setSelectedDate(null);
+              setFormData({
+                date: new Date().toISOString().split('T')[0],
+                time: '',
+                userId: '',
+                driverId: '',
+                destinationId: '',
+                notes: ''
+              });
+              setShowModal(true);
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="h-5 w-5" />
+            Nuovo Trasporto
+          </button>
         </div>
+        
         {/* Pulsanti vista */}
         <div className="flex gap-2 mb-4">
           <button
-            className={`px-3 py-1 rounded ${view === 'day' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+            className={`px-3 py-1 rounded ${
+              view === 'day' 
+                ? 'bg-blue-600 text-white' 
+                : (darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700')
+            }`}
             onClick={() => setView('day')}
           >
             Giorno
           </button>
           <button
-            className={`px-3 py-1 rounded ${view === 'week' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+            className={`px-3 py-1 rounded ${
+              view === 'week' 
+                ? 'bg-blue-600 text-white' 
+                : (darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700')
+            }`}
             onClick={() => setView('week')}
           >
             Settimana
           </button>
           <button
-            className={`px-3 py-1 rounded ${view === 'month' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+            className={`px-3 py-1 rounded ${
+              view === 'month' 
+                ? 'bg-blue-600 text-white' 
+                : (darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700')
+            }`}
             onClick={() => setView('month')}
           >
             Mese
           </button>
         </div>
+        
         <div className="flex items-center justify-between">
           <button
             onClick={previous}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className={`p-2 rounded-lg transition-colors ${
+              darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'
+            }`}
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <h2 className="text-xl font-semibold text-gray-900">
+          <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
             {view === 'month' && `${monthNames[month]} ${year}`}
             {view === 'week' && `Settimana di ${currentDate.getDate()}/${month + 1}/${year}`}
             {view === 'day' && `${currentDate.getDate()}/${month + 1}/${year}`}
           </h2>
           <button
             onClick={next}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className={`p-2 rounded-lg transition-colors ${
+              darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'
+            }`}
           >
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
       </div>
+
+      {/* Istruzioni per l'utente */}
+      <div className={`mb-4 p-3 rounded-lg text-sm ${
+        darkMode ? 'bg-gray-800 text-gray-300' : 'bg-blue-50 text-blue-800'
+      }`}>
+        💡 <strong>Suggerimenti:</strong> Clicca su un evento per modificarlo, trascina gli eventi per spostarli in altre date, clicca su una data vuota per aggiungere un nuovo trasporto.
+      </div>
+
       {/* Render in base alla vista */}
       {view === 'month' && (
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          <div className="grid grid-cols-7 bg-gray-50">
+        <div className={`rounded-lg shadow-sm border overflow-hidden ${
+          darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        }`}>
+          <div className="grid grid-cols-7 bg-gray-50 dark:bg-gray-700">
             {weekDays.map((day) => (
-              <div key={day} className="p-3 text-center text-sm font-medium text-gray-700 border-r border-gray-200 last:border-r-0">
+              <div key={day} className={`p-3 text-center text-sm font-medium border-r last:border-r-0 ${
+                darkMode ? 'text-gray-300 border-gray-600' : 'text-gray-700 border-gray-200'
+              }`}>
                 {day}
               </div>
             ))}
@@ -271,103 +458,19 @@ export default function Calendar({
       {view === 'week' && renderWeekView()}
       {view === 'day' && renderDayView()}
 
-      {/* Add Transport Modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Nuovo Trasporto - {selectedDate}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ora</label>
-                <input
-                  type="time"
-                  value={formData.time}
-                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Utente</label>
-                <select
-                  value={formData.userId}
-                  onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Seleziona utente</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>{user.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Autista</label>
-                <select
-                  value={formData.driverId}
-                  onChange={(e) => setFormData({ ...formData, driverId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Seleziona autista</option>
-                  {drivers.map((driver) => (
-                    <option key={driver.id} value={driver.id}>{driver.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Destinazione</label>
-                <select
-                  value={formData.destinationId}
-                  onChange={(e) => setFormData({ ...formData, destinationId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Seleziona destinazione</option>
-                  {destinations.map((destination) => (
-                    <option key={destination.id} value={destination.id}>
-                      {destination.name} - €{destination.cost.toFixed(2)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="submit"
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Salva
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setSelectedDate(null);
-                  }}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-md hover:bg-gray-400 transition-colors"
-                >
-                  Annulla
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Transport Modal */}
+      {showModal && (
+        <TransportModal
+          transport={selectedTransport}
+          users={users}
+          drivers={drivers}
+          destinations={destinations}
+          darkMode={darkMode}
+          onSave={onAddTransport}
+          onUpdate={onUpdateTransport}
+          onDelete={onDeleteTransport}
+          onClose={handleCloseModal}
+        />
       )}
     </div>
   );

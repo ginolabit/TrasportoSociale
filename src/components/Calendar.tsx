@@ -104,10 +104,11 @@ export default function Calendar({
     event.preventDefault();
     
     if (draggedTransport && draggedTransport.date !== targetDate) {
-      // Mantieni la stessa ora quando sposti l'evento
+      // IMPORTANTE: Mantieni esattamente la stessa ora quando sposti l'evento
+      // Non fare conversioni di timezone o modifiche all'ora
       onUpdateTransport(draggedTransport.id, {
         date: targetDate,
-        time: draggedTransport.time, // Mantieni l'ora originale
+        time: draggedTransport.time, // Mantieni l'ora ESATTA originale
         userId: draggedTransport.userId,
         driverId: draggedTransport.driverId,
         destinationId: draggedTransport.destinationId,
@@ -135,7 +136,9 @@ export default function Calendar({
     if (timeString.includes(':')) {
       const parts = timeString.split(':');
       if (parts.length >= 2) {
-        return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+        const hours = parseInt(parts[0], 10).toString().padStart(2, '0');
+        const minutes = parseInt(parts[1], 10).toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
       }
     }
     

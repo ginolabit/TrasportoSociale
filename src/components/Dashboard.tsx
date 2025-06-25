@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Plus, Calendar, Users, Car, MapPin, Pencil } from 'lucide-react';
 import { Transport, User, Driver, Destination } from '../types';
 import TransportModal from './TransportModal';
@@ -29,23 +29,9 @@ export default function Dashboard({
   const [selectedTransport, setSelectedTransport] = useState<Transport | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('📊 Dashboard - Transports received:', transports.length);
-    console.log('📊 Dashboard - Sample transport:', transports[0]);
-  }, [transports]);
-
   const today = new Date();
-  const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-  
-  console.log('📅 Today string:', todayString);
-  
-  const todayTransports = transports.filter(t => {
-    console.log('🔍 Checking transport date:', t.date, 'vs today:', todayString);
-    return t.date === todayString;
-  });
-
-  console.log('📊 Today\'s transports:', todayTransports.length);
+  const todayString = today.toISOString().split('T')[0];
+  const todayTransports = transports.filter(t => t.date === todayString);
 
   const handleEditTransport = (transport: Transport) => {
     setSelectedTransport(transport);
@@ -154,7 +140,7 @@ export default function Dashboard({
       }`}>
         <div className={`p-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            Trasporti di Oggi ({todayString})
+            Trasporti di Oggi
           </h2>
         </div>
         <div className="p-6">
@@ -173,7 +159,7 @@ export default function Dashboard({
           ) : (
             <div className="space-y-4">
               {todayTransports
-                .sort((a, b) => a.time.localeCompare(b.time)) // Ordina per ora
+                .sort((a, b) => a.time.localeCompare(b.time))
                 .map((transport) => {
                   const user = users.find(u => u.id === transport.userId);
                   const driver = drivers.find(d => d.id === transport.driverId);
@@ -225,25 +211,6 @@ export default function Dashboard({
           )}
         </div>
       </div>
-
-      {/* Debug Info - Solo in development */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className={`rounded-lg shadow-sm border p-4 ${
-          darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-        }`}>
-          <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            Debug Info
-          </h3>
-          <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            <p>Total transports: {transports.length}</p>
-            <p>Today's transports: {todayTransports.length}</p>
-            <p>Today string: {todayString}</p>
-            {transports.length > 0 && (
-              <p>Sample transport date: {transports[0]?.date}</p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Transport Modal */}
       {showModal && (

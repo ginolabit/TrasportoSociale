@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Transport, User, Driver, Destination } from '../types';
 import TransportModal from './TransportModal';
@@ -32,12 +32,6 @@ export default function Calendar({
 
   const [view, setView] = useState<'month' | 'week' | 'day'>('month');
 
-  // Debug logging
-  useEffect(() => {
-    console.log('📊 Calendar - Transports received:', transports.length);
-    console.log('📊 Calendar - Sample transport:', transports[0]);
-  }, [transports]);
-
   const today = new Date();
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -68,13 +62,10 @@ export default function Calendar({
   };
 
   const getTransportsForDate = (date: string) => {
-    const transportsForDate = transports.filter(t => t.date === date);
-    console.log(`📅 Transports for ${date}:`, transportsForDate.length);
-    return transportsForDate;
+    return transports.filter(t => t.date === date);
   };
 
   const handleDateClick = (day: number, event: React.MouseEvent) => {
-    // Solo se non stiamo cliccando su un evento
     if ((event.target as HTMLElement).closest('.transport-event')) {
       return;
     }
@@ -112,12 +103,9 @@ export default function Calendar({
     event.preventDefault();
     
     if (draggedTransport && draggedTransport.date !== targetDate) {
-      // MANTIENI ESATTAMENTE LA STESSA ORA
-      console.log('🔄 Drag & Drop - Ora originale:', draggedTransport.time);
-      
       onUpdateTransport(draggedTransport.id, {
         date: targetDate,
-        time: draggedTransport.time, // Mantieni l'ora ESATTA originale
+        time: draggedTransport.time,
         userId: draggedTransport.userId,
         driverId: draggedTransport.driverId,
         destinationId: draggedTransport.destinationId,
@@ -277,7 +265,7 @@ export default function Calendar({
           </div>
         )}
         {dayTransports
-          .sort((a, b) => a.time.localeCompare(b.time)) // Ordina per ora
+          .sort((a, b) => a.time.localeCompare(b.time))
           .map((transport) => {
             const user = users.find(u => u.id === transport.userId);
             const destination = destinations.find(d => d.id === transport.destinationId);
@@ -387,16 +375,6 @@ export default function Calendar({
       }`}>
         💡 <strong>Suggerimenti:</strong> Clicca su un evento per modificarlo, trascina gli eventi per spostarli in altre date (l'ora rimane invariata), clicca su una data vuota per aggiungere un nuovo trasporto.
       </div>
-
-      {/* Debug Info - Solo in development */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className={`mb-4 p-3 rounded-lg text-xs ${
-          darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
-        }`}>
-          <strong>Debug:</strong> Trasporti totali: {transports.length}
-          {transports.length > 0 && ` | Primo trasporto: ${transports[0]?.date} ${transports[0]?.time}`}
-        </div>
-      )}
 
       {/* Render in base alla vista */}
       {view === 'month' && (

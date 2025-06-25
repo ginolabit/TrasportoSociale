@@ -8,7 +8,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 10000,
 });
 
 // Add auth token to requests
@@ -25,12 +25,9 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Only remove token and redirect if we're not already on login page
       const currentPath = window.location.pathname;
       if (currentPath !== '/' && currentPath !== '/login') {
         localStorage.removeItem('auth_token');
-        // Don't force reload, let the app handle the state change
-        console.log('Authentication expired, redirecting to login');
       }
     }
     return Promise.reject(error);
@@ -253,16 +250,13 @@ export const destinationsApi = {
   },
 };
 
-// Transports API - ENHANCED WITH BETTER LOGGING
+// Transports API
 export const transportsApi = {
   getAll: async (): Promise<Transport[]> => {
     try {
-      console.log('Fetching all transports...'); // Debug log
       const response = await api.get('/transports');
-      console.log('Transports fetched:', response.data); // Debug log
       return response.data;
     } catch (error) {
-      console.error('Error fetching transports:', error); // Debug log
       handleApiError(error);
       return [];
     }
@@ -270,12 +264,9 @@ export const transportsApi = {
 
   create: async (transportData: Omit<Transport, 'id' | 'createdAt'>): Promise<Transport> => {
     try {
-      console.log('Creating transport with data:', transportData); // Debug log
       const response = await api.post('/transports', transportData);
-      console.log('Transport created successfully:', response.data); // Debug log
       return response.data;
     } catch (error) {
-      console.error('Error creating transport:', error); // Debug log
       handleApiError(error);
       throw error;
     }
@@ -283,12 +274,9 @@ export const transportsApi = {
 
   update: async (id: string, transportData: Omit<Transport, 'id' | 'createdAt'>): Promise<Transport> => {
     try {
-      console.log('Updating transport:', id, 'with data:', transportData); // Debug log
       const response = await api.put(`/transports/${id}`, transportData);
-      console.log('Transport updated successfully:', response.data); // Debug log
       return response.data;
     } catch (error) {
-      console.error('Error updating transport:', error); // Debug log
       handleApiError(error);
       throw error;
     }
@@ -296,11 +284,8 @@ export const transportsApi = {
 
   delete: async (id: string): Promise<void> => {
     try {
-      console.log('Deleting transport:', id); // Debug log
       await api.delete(`/transports/${id}`);
-      console.log('Transport deleted successfully'); // Debug log
     } catch (error) {
-      console.error('Error deleting transport:', error); // Debug log
       handleApiError(error);
       throw error;
     }
@@ -313,7 +298,6 @@ export const healthCheck = async (): Promise<boolean> => {
     const response = await api.get('/health');
     return response.status === 200;
   } catch (error) {
-    console.error('Health check failed:', error);
     return false;
   }
 };

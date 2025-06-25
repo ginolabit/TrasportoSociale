@@ -122,16 +122,14 @@ const initializeSchema = async (pool) => {
       )
     `);
 
-    // AGGIORNA la tabella Transports per usare NVARCHAR per il campo time
+    // Create Transports table with NVARCHAR time field
     await pool.request().query(`
       IF EXISTS (SELECT * FROM sysobjects WHERE name='Transports' AND xtype='U')
       BEGIN
-        -- Controlla se il campo time è ancora di tipo TIME
         IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
                    WHERE TABLE_NAME = 'Transports' AND COLUMN_NAME = 'time' 
                    AND DATA_TYPE = 'time')
         BEGIN
-          -- Crea una tabella temporanea con la nuova struttura
           CREATE TABLE Transports_New (
             id NVARCHAR(50) PRIMARY KEY,
             date DATE NOT NULL,
@@ -146,25 +144,18 @@ const initializeSchema = async (pool) => {
             FOREIGN KEY (destinationId) REFERENCES Destinations(id) ON DELETE CASCADE
           );
           
-          -- Copia i dati esistenti convertendo il campo time
           INSERT INTO Transports_New (id, date, time, userId, driverId, destinationId, notes, createdAt)
           SELECT id, date, 
                  FORMAT(CAST(time AS TIME), 'HH\\:mm') as time,
                  userId, driverId, destinationId, notes, createdAt
           FROM Transports;
           
-          -- Elimina la tabella vecchia
           DROP TABLE Transports;
-          
-          -- Rinomina la nuova tabella
           EXEC sp_rename 'Transports_New', 'Transports';
-          
-          PRINT 'Transports table updated successfully - time field converted to NVARCHAR(8)';
         END
       END
       ELSE
       BEGIN
-        -- Crea la tabella da zero con la struttura corretta
         CREATE TABLE Transports (
           id NVARCHAR(50) PRIMARY KEY,
           date DATE NOT NULL,
@@ -178,8 +169,6 @@ const initializeSchema = async (pool) => {
           FOREIGN KEY (driverId) REFERENCES Drivers(id) ON DELETE CASCADE,
           FOREIGN KEY (destinationId) REFERENCES Destinations(id) ON DELETE CASCADE
         );
-        
-        PRINT 'Transports table created successfully with NVARCHAR(8) time field';
       END
     `);
 
@@ -212,14 +201,12 @@ const initializeSchema = async (pool) => {
 // Helper function to generate ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// Helper function to validate and format time - SEMPLIFICATO
+// Helper function to validate and format time
 const validateAndFormatTime = (timeInput) => {
   if (!timeInput) return null;
   
   try {
     const timeStr = timeInput.toString().trim();
-    
-    // Regex per HH:MM (accetta anche H:MM)
     const timeRegex = /^(\d{1,2}):(\d{2})$/;
     const match = timeStr.match(timeRegex);
     
@@ -227,13 +214,11 @@ const validateAndFormatTime = (timeInput) => {
       const hours = parseInt(match[1], 10);
       const minutes = parseInt(match[2], 10);
       
-      // Valida ore e minuti
       if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
       }
     }
     
-    console.error('Invalid time format:', timeInput);
     return null;
   } catch (error) {
     console.error('Error validating time:', error);
@@ -668,17 +653,11 @@ app.delete('/api/destinations/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Transports endpoints - ENHANCED WITH BETTER LOGGING
+// Transports endpoints
 app.get('/api/transports', authenticateToken, async (req, res) => {
   try {
-    console.log('Fetching transports from database...'); // Debug log
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
-    
-    console.log(`Found ${result.recordset.length} transports in database`); // Debug log
-    console.log('Sample transport data:', result.recordset[0]); // Debug log
-    
-    // Il campo time è già una stringa, non serve formattazione
     res.json(result.recordset);
   } catch (error) {
     console.error('Error fetching transports:', error);
@@ -692,16 +671,10 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
     const id = generateId();
     const pool = await poolPromise;
     
-    console.log('Received transport data:', { date, time, userId, driverId, destinationId, notes }); // Debug log
-    
-    // Valida e formatta l'orario
     const formattedTime = validateAndFormatTime(time);
     if (!formattedTime) {
-      console.error('Time validation failed for:', time); // Debug log
       return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
-    
-    console.log('Creating transport with validated time:', formattedTime); // Debug log
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -717,7 +690,6 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    console.log('Transport created successfully:', result.recordset[0]); // Debug log
     res.status(201).json(result.recordset[0]);
   } catch (error) {
     console.error('Error creating transport:', error);
@@ -731,16 +703,10 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
     const { date, time, userId, driverId, destinationId, notes } = req.body;
     const pool = await poolPromise;
     
-    console.log('Updating transport:', id, 'with data:', { date, time, userId, driverId, destinationId, notes }); // Debug log
-    
-    // Valida e formatta l'orario
     const formattedTime = validateAndFormatTime(time);
     if (!formattedTime) {
-      console.error('Time validation failed for:', time); // Debug log
       return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
-    
-    console.log('Updating transport with validated time:', formattedTime); // Debug log
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -756,7 +722,6 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    console.log('Transport updated successfully:', result.recordset[0]); // Debug log
     res.json(result.recordset[0]);
   } catch (error) {
     console.error('Error updating transport:', error);
@@ -769,13 +734,10 @@ app.delete('/api/transports/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const pool = await poolPromise;
     
-    console.log('Deleting transport:', id); // Debug log
-    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .query('DELETE FROM Transports WHERE id = @id');
     
-    console.log('Transport deleted successfully'); // Debug log
     res.status(204).send();
   } catch (error) {
     console.error('Error deleting transport:', error);

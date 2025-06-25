@@ -4,6 +4,7 @@ import { authApi } from '../services/api';
 
 export function useAuth() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [registeredUsers, setRegisteredUsers] = useState<AuthUser[]>([]);
   const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,10 +30,11 @@ export function useAuth() {
     checkAuth();
   }, []);
 
-  // Load access requests if user is admin
+  // Load access requests and registered users if user is admin
   useEffect(() => {
     if (currentUser?.role === 'admin') {
       loadAccessRequests();
+      loadRegisteredUsers();
     }
   }, [currentUser]);
 
@@ -42,6 +44,15 @@ export function useAuth() {
       setAccessRequests(requests);
     } catch (error) {
       console.error('Error loading access requests:', error);
+    }
+  };
+
+  const loadRegisteredUsers = async () => {
+    try {
+      const users = await authApi.getRegisteredUsers();
+      setRegisteredUsers(users);
+    } catch (error) {
+      console.error('Error loading registered users:', error);
     }
   };
 
@@ -93,6 +104,7 @@ export function useAuth() {
   const logout = () => {
     localStorage.removeItem('auth_token');
     setCurrentUser(null);
+    setRegisteredUsers([]);
     setAccessRequests([]);
     setError(null);
   };
@@ -101,6 +113,7 @@ export function useAuth() {
     try {
       await authApi.approveRequest(id);
       await loadAccessRequests();
+      await loadRegisteredUsers();
     } catch (error: any) {
       setError(error.message || 'Errore durante l\'approvazione');
     }
@@ -115,10 +128,29 @@ export function useAuth() {
     }
   };
 
+  const updateUserRole = async (userId: string, role: 'admin' | 'user') => {
+    try {
+      await authApi.updateUserRole(userId, role);
+      await loadRegisteredUsers();
+    } catch (error: any) {
+      setError(error.message || 'Errore durante l\'aggiornamento del ruolo');
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    try {
+      await authApi.deleteUser(userId);
+      await loadRegisteredUsers();
+    } catch (error: any) {
+      setError(error.message || 'Errore durante l\'eliminazione dell\'utente');
+    }
+  };
+
   const clearError = () => setError(null);
 
   return {
     currentUser,
+    registeredUsers,
     accessRequests,
     loading,
     error,
@@ -127,6 +159,8 @@ export function useAuth() {
     logout,
     approveRequest,
     rejectRequest,
+    updateUserRole,
+    deleteUser,
     clearError,
   };
 }

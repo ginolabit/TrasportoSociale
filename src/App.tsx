@@ -12,6 +12,7 @@ import Destinations from './components/Destinations';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
 import AccessRequests from './components/AccessRequests';
+import UserManagement from './components/UserManagement';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBanner from './components/ErrorBanner';
 import { ViewType } from './types';
@@ -22,6 +23,7 @@ function App() {
   
   const {
     currentUser,
+    registeredUsers,
     accessRequests,
     loading: authLoading,
     error: authError,
@@ -30,6 +32,8 @@ function App() {
     logout,
     approveRequest,
     rejectRequest,
+    updateUserRole,
+    deleteUser,
     clearError: clearAuthError,
   } = useAuth();
 
@@ -43,7 +47,7 @@ function App() {
     isOnline,
     addUser,
     updateUser,
-    deleteUser,
+    deleteUser: deleteDataUser,
     addDriver,
     updateDriver,
     deleteDriver,
@@ -121,7 +125,7 @@ function App() {
             darkMode={darkMode}
             onAddUser={addUser}
             onUpdateUser={updateUser}
-            onDeleteUser={deleteUser}
+            onDeleteUser={deleteDataUser}
           />
         );
       case 'drivers':
@@ -161,6 +165,16 @@ function App() {
             darkMode={darkMode}
             onApprove={approveRequest}
             onReject={rejectRequest}
+          />
+        );
+      case 'user-management':
+        return (
+          <UserManagement
+            users={registeredUsers}
+            currentUser={currentUser}
+            darkMode={darkMode}
+            onUpdateUserRole={updateUserRole}
+            onDeleteUser={deleteUser}
           />
         );
       case 'settings':

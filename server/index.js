@@ -438,6 +438,57 @@ app.post('/api/auth/access-requests/:id/reject', authenticateToken, requireAdmin
   }
 });
 
+// User management endpoints
+app.get('/api/auth/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query('SELECT id, username, email, fullName, role, isApproved, createdAt FROM AuthUsers WHERE isApproved = 1 ORDER BY createdAt DESC');
+    res.json(result.recordset);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/api/auth/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+    
+    if (!['admin', 'user'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    const pool = await poolPromise;
+    
+    await pool.request()
+      .input('id', sql.NVarChar, id)
+      .input('role', sql.NVarChar, role)
+      .query('UPDATE AuthUsers SET role = @role WHERE id = @id');
+    
+    res.json({ message: 'User role updated successfully' });
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/auth/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pool = await poolPromise;
+    
+    await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('DELETE FROM AuthUsers WHERE id = @id');
+    
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Users endpoints
 app.get('/api/users', authenticateToken, async (req, res) => {
   try {

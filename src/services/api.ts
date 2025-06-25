@@ -122,6 +122,34 @@ export const authApi = {
       throw error;
     }
   },
+
+  getRegisteredUsers: async (): Promise<AuthUser[]> => {
+    try {
+      const response = await api.get('/auth/users');
+      return response.data;
+    } catch (error) {
+      handleApiError(error);
+      return [];
+    }
+  },
+
+  updateUserRole: async (userId: string, role: 'admin' | 'user'): Promise<void> => {
+    try {
+      await api.put(`/auth/users/${userId}/role`, { role });
+    } catch (error) {
+      handleApiError(error);
+      throw error;
+    }
+  },
+
+  deleteUser: async (userId: string): Promise<void> => {
+    try {
+      await api.delete(`/auth/users/${userId}`);
+    } catch (error) {
+      handleApiError(error);
+      throw error;
+    }
+  },
 };
 
 // Users API

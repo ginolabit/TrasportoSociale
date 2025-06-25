@@ -10,7 +10,8 @@ import {
   Menu,
   X,
   UserCheck,
-  LogOut
+  LogOut,
+  Shield
 } from 'lucide-react';
 import { ViewType, AuthUser } from '../types';
 
@@ -31,6 +32,7 @@ const navigation = [
   { id: 'destinations' as ViewType, name: 'Destinazioni', icon: MapPin, adminOnly: false },
   { id: 'reports' as ViewType, name: 'Report', icon: BarChart3, adminOnly: false },
   { id: 'access-requests' as ViewType, name: 'Richieste Accesso', icon: UserCheck, adminOnly: true },
+  { id: 'user-management' as ViewType, name: 'Gestione Utenti', icon: Shield, adminOnly: true },
   { id: 'settings' as ViewType, name: 'Impostazioni', icon: Settings, adminOnly: false },
 ];
 

@@ -55,4 +55,4 @@ export interface AccessRequest {
   status: 'pending' | 'approved' | 'rejected';
 }
 
-export type ViewType = 'dashboard' | 'calendar' | 'users' | 'drivers' | 'destinations' | 'reports' | 'settings' | 'access-requests';
+export type ViewType = 'dashboard' | 'calendar' | 'users' | 'drivers' | 'destinations' | 'reports' | 'settings' | 'access-requests' | 'user-management';

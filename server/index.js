@@ -226,6 +226,25 @@ const validateAndFormatTime = (timeInput) => {
   }
 };
 
+// Helper function to format date for consistent output
+const formatDateForOutput = (dateValue) => {
+  if (!dateValue) return '';
+  
+  try {
+    const date = new Date(dateValue);
+    if (isNaN(date.getTime())) return dateValue;
+    
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    
+    return `${year}-${month}-${day}`;
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return dateValue;
+  }
+};
+
 // Auth middleware
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -658,7 +677,14 @@ app.get('/api/transports', authenticateToken, async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
-    res.json(result.recordset);
+    
+    // Format dates consistently
+    const formattedTransports = result.recordset.map(transport => ({
+      ...transport,
+      date: formatDateForOutput(transport.date)
+    }));
+    
+    res.json(formattedTransports);
   } catch (error) {
     console.error('Error fetching transports:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -690,7 +716,13 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    res.status(201).json(result.recordset[0]);
+    const transport = result.recordset[0];
+    const formattedTransport = {
+      ...transport,
+      date: formatDateForOutput(transport.date)
+    };
+    
+    res.status(201).json(formattedTransport);
   } catch (error) {
     console.error('Error creating transport:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -722,7 +754,13 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    res.json(result.recordset[0]);
+    const transport = result.recordset[0];
+    const formattedTransport = {
+      ...transport,
+      date: formatDateForOutput(transport.date)
+    };
+    
+    res.json(formattedTransport);
   } catch (error) {
     console.error('Error updating transport:', error);
     res.status(500).json({ error: 'Internal server error' });

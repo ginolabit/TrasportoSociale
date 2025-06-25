@@ -8,29 +8,45 @@ import {
   Home,
   Settings,
   Menu,
-  X
+  X,
+  UserCheck,
+  LogOut
 } from 'lucide-react';
-import { ViewType } from '../types';
+import { ViewType, AuthUser } from '../types';
 
 interface LayoutProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
   darkMode: boolean;
   children: React.ReactNode;
+  currentUser: AuthUser;
+  onLogout: () => void;
 }
 
 const navigation = [
-  { id: 'dashboard' as ViewType, name: 'Dashboard', icon: Home },
-  { id: 'calendar' as ViewType, name: 'Calendario', icon: Calendar },
-  { id: 'users' as ViewType, name: 'Utenti', icon: Users },
-  { id: 'drivers' as ViewType, name: 'Autisti', icon: Car },
-  { id: 'destinations' as ViewType, name: 'Destinazioni', icon: MapPin },
-  { id: 'reports' as ViewType, name: 'Report', icon: BarChart3 },
-  { id: 'settings' as ViewType, name: 'Impostazioni', icon: Settings },
+  { id: 'dashboard' as ViewType, name: 'Dashboard', icon: Home, adminOnly: false },
+  { id: 'calendar' as ViewType, name: 'Calendario', icon: Calendar, adminOnly: false },
+  { id: 'users' as ViewType, name: 'Utenti', icon: Users, adminOnly: false },
+  { id: 'drivers' as ViewType, name: 'Autisti', icon: Car, adminOnly: false },
+  { id: 'destinations' as ViewType, name: 'Destinazioni', icon: MapPin, adminOnly: false },
+  { id: 'reports' as ViewType, name: 'Report', icon: BarChart3, adminOnly: false },
+  { id: 'access-requests' as ViewType, name: 'Richieste Accesso', icon: UserCheck, adminOnly: true },
+  { id: 'settings' as ViewType, name: 'Impostazioni', icon: Settings, adminOnly: false },
 ];
 
-export default function Layout({ currentView, onViewChange, darkMode, children }: LayoutProps) {
+export default function Layout({ 
+  currentView, 
+  onViewChange, 
+  darkMode, 
+  children, 
+  currentUser, 
+  onLogout 
+}: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+
+  const filteredNavigation = navigation.filter(item => 
+    !item.adminOnly || currentUser.role === 'admin'
+  );
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
@@ -56,8 +72,19 @@ export default function Layout({ currentView, onViewChange, darkMode, children }
                   Trasporto Sociale
                 </h1>
               </div>
+              
+              {/* User info mobile */}
+              <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                <div className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  {currentUser.fullName}
+                </div>
+                <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {currentUser.role === 'admin' ? 'Amministratore' : 'Utente'}
+                </div>
+              </div>
+
               <nav className="mt-8 flex-1 space-y-1 px-2">
-                {navigation.map((item) => {
+                {filteredNavigation.map((item) => {
                   const Icon = item.icon;
                   return (
                     <button
@@ -80,6 +107,21 @@ export default function Layout({ currentView, onViewChange, darkMode, children }
                   );
                 })}
               </nav>
+
+              {/* Logout button mobile */}
+              <div className="px-2 pb-4">
+                <button
+                  onClick={onLogout}
+                  className={`group flex w-full items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    darkMode
+                      ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <LogOut className="mr-3 h-5 w-5 flex-shrink-0" />
+                  Esci
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -96,8 +138,19 @@ export default function Layout({ currentView, onViewChange, darkMode, children }
                 Trasporto Sociale
               </h1>
             </div>
+
+            {/* User info desktop */}
+            <div className={`px-6 py-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                {currentUser.fullName}
+              </div>
+              <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                {currentUser.role === 'admin' ? 'Amministratore' : 'Utente'}
+              </div>
+            </div>
+
             <nav className="mt-8 flex-1 space-y-1 px-4">
-              {navigation.map((item) => {
+              {filteredNavigation.map((item) => {
                 const Icon = item.icon;
                 return (
                   <button
@@ -117,6 +170,21 @@ export default function Layout({ currentView, onViewChange, darkMode, children }
                 );
               })}
             </nav>
+
+            {/* Logout button desktop */}
+            <div className="px-4 pb-4">
+              <button
+                onClick={onLogout}
+                className={`group flex w-full items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  darkMode
+                    ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <LogOut className="mr-3 h-5 w-5 flex-shrink-0" />
+                Esci
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -140,7 +208,14 @@ export default function Layout({ currentView, onViewChange, darkMode, children }
             <h1 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
               Trasporto Sociale
             </h1>
-            <div className="w-10" />
+            <button
+              onClick={onLogout}
+              className={`rounded-md p-2 hover:bg-gray-100 ${
+                darkMode ? 'text-gray-400 hover:bg-gray-700 hover:text-gray-300' : 'text-gray-400 hover:text-gray-500'
+              }`}
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
         </div>
 

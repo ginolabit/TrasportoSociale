@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { User, Driver, Destination, Transport } from '../types';
+import { User, Driver, Destination, Transport, AuthUser, AccessRequest } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -10,10 +10,90 @@ const api = axios.create({
   },
 });
 
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // Error handler
 const handleApiError = (error: any) => {
   console.error('API Error:', error);
+  if (error.response?.status === 401) {
+    localStorage.removeItem('auth_token');
+    window.location.reload();
+  }
   throw new Error(error.response?.data?.error || 'An error occurred');
+};
+
+// Auth API
+export const authApi = {
+  login: async (username: string, password: string): Promise<{ user: AuthUser; token: string }> => {
+    try {
+      const response = await api.post('/auth/login', { username, password });
+      return response.data;
+    } catch (error) {
+      handleApiError(error);
+      throw error;
+    }
+  },
+
+  register: async (userData: {
+    username: string;
+    email: string;
+    fullName: string;
+    password: string;
+  }): Promise<void> => {
+    try {
+      await api.post('/auth/register', userData);
+    } catch (error) {
+      handleApiError(error);
+      throw error;
+    }
+  },
+
+  verifyToken: async (token: string): Promise<AuthUser> => {
+    try {
+      const response = await api.get('/auth/verify', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return response.data;
+    } catch (error) {
+      handleApiError(error);
+      throw error;
+    }
+  },
+
+  getAccessRequests: async (): Promise<AccessRequest[]> => {
+    try {
+      const response = await api.get('/auth/access-requests');
+      return response.data;
+    } catch (error) {
+      handleApiError(error);
+      return [];
+    }
+  },
+
+  approveRequest: async (id: string): Promise<void> => {
+    try {
+      await api.post(`/auth/access-requests/${id}/approve`);
+    } catch (error) {
+      handleApiError(error);
+      throw error;
+    }
+  },
+
+  rejectRequest: async (id: string): Promise<void> => {
+    try {
+      await api.post(`/auth/access-requests/${id}/reject`);
+    } catch (error) {
+      handleApiError(error);
+      throw error;
+    }
+  },
 };
 
 // Users API

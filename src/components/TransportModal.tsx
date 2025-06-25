@@ -8,6 +8,7 @@ interface TransportModalProps {
   drivers: Driver[];
   destinations: Destination[];
   darkMode: boolean;
+  selectedDate?: string | null;
   onSave: (transport: Omit<Transport, 'id' | 'createdAt'>) => void;
   onUpdate: (id: string, transport: Omit<Transport, 'id' | 'createdAt'>) => void;
   onDelete: (id: string) => void;
@@ -20,13 +21,14 @@ export default function TransportModal({
   drivers,
   destinations,
   darkMode,
+  selectedDate,
   onSave,
   onUpdate,
   onDelete,
   onClose
 }: TransportModalProps) {
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: selectedDate || new Date().toISOString().split('T')[0],
     time: '',
     userId: '',
     driverId: '',
@@ -44,8 +46,13 @@ export default function TransportModal({
         destinationId: transport.destinationId,
         notes: transport.notes || ''
       });
+    } else if (selectedDate) {
+      setFormData(prev => ({
+        ...prev,
+        date: selectedDate
+      }));
     }
-  }, [transport]);
+  }, [transport, selectedDate]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

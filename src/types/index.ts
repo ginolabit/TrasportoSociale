@@ -36,4 +36,23 @@ export interface Transport {
   createdAt: string;
 }
 
-export type ViewType = 'dashboard' | 'calendar' | 'users' | 'drivers' | 'destinations' | 'reports' | 'settings';
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  role: 'admin' | 'user';
+  isApproved: boolean;
+  createdAt: string;
+}
+
+export interface AccessRequest {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
+export type ViewType = 'dashboard' | 'calendar' | 'users' | 'drivers' | 'destinations' | 'reports' | 'settings' | 'access-requests';

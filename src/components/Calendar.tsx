@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Transport, User, Driver, Destination } from '../types';
 import TransportModal from './TransportModal';
@@ -29,14 +29,6 @@ export default function Calendar({
   const [showModal, setShowModal] = useState(false);
   const [selectedTransport, setSelectedTransport] = useState<Transport | null>(null);
   const [draggedTransport, setDraggedTransport] = useState<Transport | null>(null);
-  const [formData, setFormData] = useState({
-    date: '',
-    time: '',
-    userId: '',
-    driverId: '',
-    destinationId: '',
-    notes: ''
-  });
 
   const [view, setView] = useState<'month' | 'week' | 'day'>('month');
 
@@ -82,59 +74,19 @@ export default function Calendar({
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     setSelectedDate(dateStr);
     setSelectedTransport(null);
-    setFormData({ 
-      date: dateStr,
-      time: '',
-      userId: '',
-      driverId: '',
-      destinationId: '',
-      notes: ''
-    });
     setShowModal(true);
   };
 
   const handleTransportClick = (transport: Transport, event: React.MouseEvent) => {
     event.stopPropagation();
     setSelectedTransport(transport);
-    setFormData({
-      date: transport.date,
-      time: transport.time,
-      userId: transport.userId,
-      driverId: transport.driverId,
-      destinationId: transport.destinationId,
-      notes: transport.notes || ''
-    });
     setShowModal(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.time || !formData.userId || !formData.driverId || !formData.destinationId) {
-      alert('Compila tutti i campi obbligatori');
-      return;
-    }
-
-    if (selectedTransport) {
-      onUpdateTransport(selectedTransport.id, formData);
-    } else {
-      onAddTransport(formData);
-    }
-    
-    handleCloseModal();
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
     setSelectedTransport(null);
     setSelectedDate(null);
-    setFormData({
-      date: '',
-      time: '',
-      userId: '',
-      driverId: '',
-      destinationId: '',
-      notes: ''
-    });
   };
 
   const handleDragStart = (transport: Transport, event: React.DragEvent) => {
@@ -152,18 +104,14 @@ export default function Calendar({
     event.preventDefault();
     
     if (draggedTransport && draggedTransport.date !== targetDate) {
-      const updatedTransport = {
-        ...draggedTransport,
-        date: targetDate
-      };
-      
+      // Mantieni la stessa ora quando sposti l'evento
       onUpdateTransport(draggedTransport.id, {
-        date: updatedTransport.date,
-        time: updatedTransport.time,
-        userId: updatedTransport.userId,
-        driverId: updatedTransport.driverId,
-        destinationId: updatedTransport.destinationId,
-        notes: updatedTransport.notes || ''
+        date: targetDate,
+        time: draggedTransport.time, // Mantieni l'ora originale
+        userId: draggedTransport.userId,
+        driverId: draggedTransport.driverId,
+        destinationId: draggedTransport.destinationId,
+        notes: draggedTransport.notes || ''
       });
     }
     
@@ -172,6 +120,26 @@ export default function Calendar({
 
   const handleDragEnd = () => {
     setDraggedTransport(null);
+  };
+
+  // Funzione per formattare l'ora senza conversioni di timezone
+  const formatDisplayTime = (timeString: string) => {
+    if (!timeString) return '';
+    
+    // Se l'ora è già nel formato HH:MM, restituiscila così com'è
+    if (timeString.match(/^\d{1,2}:\d{2}$/)) {
+      return timeString;
+    }
+    
+    // Se l'ora include i secondi, rimuovili
+    if (timeString.includes(':')) {
+      const parts = timeString.split(':');
+      if (parts.length >= 2) {
+        return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+      }
+    }
+    
+    return timeString;
   };
 
   // --- VISTA MESE ---
@@ -216,13 +184,13 @@ export default function Calendar({
                   className={`transport-event text-xs bg-blue-100 text-blue-800 p-1 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors ${
                     isDragging ? 'opacity-50' : ''
                   } ${darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''}`}
-                  title={`${transport.time} - ${user?.name} → ${destination?.name}`}
+                  title={`${formatDisplayTime(transport.time)} - ${user?.name} → ${destination?.name}`}
                   draggable
                   onDragStart={(e) => handleDragStart(transport, e)}
                   onDragEnd={handleDragEnd}
                   onClick={(e) => handleTransportClick(transport, e)}
                 >
-                  {transport.time} {user?.name}
+                  {formatDisplayTime(transport.time)} {user?.name}
                 </div>
               );
             })}
@@ -286,13 +254,13 @@ export default function Calendar({
                   className={`transport-event text-xs bg-blue-100 text-blue-800 p-1 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors ${
                     isDragging ? 'opacity-50' : ''
                   } ${darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''}`}
-                  title={`${transport.time} - ${user?.name} → ${destination?.name}`}
+                  title={`${formatDisplayTime(transport.time)} - ${user?.name} → ${destination?.name}`}
                   draggable
                   onDragStart={(e) => handleDragStart(transport, e)}
                   onDragEnd={handleDragEnd}
                   onClick={(e) => handleTransportClick(transport, e)}
                 >
-                  {transport.time} {user?.name}
+                  {formatDisplayTime(transport.time)} {user?.name}
                 </div>
               );
             })}
@@ -331,7 +299,7 @@ export default function Calendar({
               onClick={(e) => handleTransportClick(transport, e)}
               title="Clicca per modificare"
             >
-              <div><b>Ora:</b> {transport.time}</div>
+              <div><b>Ora:</b> {formatDisplayTime(transport.time)}</div>
               <div><b>Utente:</b> {user?.name}</div>
               <div><b>Destinazione:</b> {destination?.name}</div>
               {transport.notes && <div><b>Note:</b> {transport.notes}</div>}
@@ -352,15 +320,7 @@ export default function Calendar({
           <button
             onClick={() => {
               setSelectedTransport(null);
-              setSelectedDate(null);
-              setFormData({
-                date: new Date().toISOString().split('T')[0],
-                time: '',
-                userId: '',
-                driverId: '',
-                destinationId: '',
-                notes: ''
-              });
+              setSelectedDate(new Date().toISOString().split('T')[0]);
               setShowModal(true);
             }}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
@@ -433,7 +393,7 @@ export default function Calendar({
       <div className={`mb-4 p-3 rounded-lg text-sm ${
         darkMode ? 'bg-gray-800 text-gray-300' : 'bg-blue-50 text-blue-800'
       }`}>
-        💡 <strong>Suggerimenti:</strong> Clicca su un evento per modificarlo, trascina gli eventi per spostarli in altre date, clicca su una data vuota per aggiungere un nuovo trasporto.
+        💡 <strong>Suggerimenti:</strong> Clicca su un evento per modificarlo, trascina gli eventi per spostarli in altre date (l'ora rimane invariata), clicca su una data vuota per aggiungere un nuovo trasporto.
       </div>
 
       {/* Render in base alla vista */}
@@ -466,6 +426,7 @@ export default function Calendar({
           drivers={drivers}
           destinations={destinations}
           darkMode={darkMode}
+          selectedDate={selectedDate}
           onSave={onAddTransport}
           onUpdate={onUpdateTransport}
           onDelete={onDeleteTransport}

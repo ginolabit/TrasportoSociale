@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useDarkMode } from './hooks/useDarkMode';
 import { useDatabase } from './hooks/useDatabase';
+import { useAuth } from './hooks/useAuth';
 import Layout from './components/Layout';
+import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Calendar from './components/Calendar';
 import Users from './components/Users';
@@ -9,6 +11,7 @@ import Drivers from './components/Drivers';
 import Destinations from './components/Destinations';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
+import AccessRequests from './components/AccessRequests';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBanner from './components/ErrorBanner';
 import { ViewType } from './types';
@@ -16,13 +19,27 @@ import { ViewType } from './types';
 function App() {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const { darkMode, toggleDarkMode } = useDarkMode();
+  
+  const {
+    currentUser,
+    accessRequests,
+    loading: authLoading,
+    error: authError,
+    login,
+    register,
+    logout,
+    approveRequest,
+    rejectRequest,
+    clearError: clearAuthError,
+  } = useAuth();
+
   const {
     users,
     drivers,
     destinations,
     transports,
-    loading,
-    error,
+    loading: dataLoading,
+    error: dataError,
     isOnline,
     addUser,
     updateUser,
@@ -37,11 +54,29 @@ function App() {
     updateTransport,
     deleteTransport,
     loadAllData,
-    clearError,
+    clearError: clearDataError,
   } = useDatabase();
 
+  // Show loading spinner while checking authentication
+  if (authLoading) {
+    return <LoadingSpinner darkMode={darkMode} message="Verifica autenticazione..." />;
+  }
+
+  // Show login page if not authenticated
+  if (!currentUser) {
+    return (
+      <Login
+        onLogin={login}
+        onRegister={register}
+        darkMode={darkMode}
+        loading={false}
+        error={authError}
+      />
+    );
+  }
+
   const renderCurrentView = () => {
-    if (loading) {
+    if (dataLoading) {
       return <LoadingSpinner darkMode={darkMode} />;
     }
 
@@ -113,6 +148,15 @@ function App() {
             darkMode={darkMode}
           />
         );
+      case 'access-requests':
+        return (
+          <AccessRequests
+            requests={accessRequests}
+            darkMode={darkMode}
+            onApprove={approveRequest}
+            onReject={rejectRequest}
+          />
+        );
       case 'settings':
         return (
           <Settings
@@ -129,15 +173,28 @@ function App() {
 
   return (
     <div className={darkMode ? 'dark' : ''}>
-      <Layout currentView={currentView} onViewChange={setCurrentView} darkMode={darkMode}>
-        {error && (
+      <Layout 
+        currentView={currentView} 
+        onViewChange={setCurrentView} 
+        darkMode={darkMode}
+        currentUser={currentUser}
+        onLogout={logout}
+      >
+        {authError && (
           <ErrorBanner
-            message={error}
-            onClose={clearError}
+            message={authError}
+            onClose={clearAuthError}
             darkMode={darkMode}
           />
         )}
-        {!isOnline && !loading && (
+        {dataError && (
+          <ErrorBanner
+            message={dataError}
+            onClose={clearDataError}
+            darkMode={darkMode}
+          />
+        )}
+        {!isOnline && !dataLoading && (
           <ErrorBanner
             message="Connessione al database non disponibile. Alcune funzionalità potrebbero non funzionare."
             type="warning"

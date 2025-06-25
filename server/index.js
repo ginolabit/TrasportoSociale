@@ -2,11 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import sql from 'mssql';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 // Middleware
 app.use(cors());
@@ -51,6 +54,35 @@ const initializeDatabase = async () => {
 
 const initializeSchema = async (pool) => {
   try {
+    // Create AuthUsers table
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='AuthUsers' AND xtype='U')
+      CREATE TABLE AuthUsers (
+        id NVARCHAR(50) PRIMARY KEY,
+        username NVARCHAR(100) UNIQUE NOT NULL,
+        email NVARCHAR(255) UNIQUE NOT NULL,
+        fullName NVARCHAR(255) NOT NULL,
+        passwordHash NVARCHAR(255) NOT NULL,
+        role NVARCHAR(20) DEFAULT 'user',
+        isApproved BIT DEFAULT 0,
+        createdAt DATETIME2 DEFAULT GETDATE()
+      )
+    `);
+
+    // Create AccessRequests table
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='AccessRequests' AND xtype='U')
+      CREATE TABLE AccessRequests (
+        id NVARCHAR(50) PRIMARY KEY,
+        username NVARCHAR(100) NOT NULL,
+        email NVARCHAR(255) NOT NULL,
+        fullName NVARCHAR(255) NOT NULL,
+        passwordHash NVARCHAR(255) NOT NULL,
+        status NVARCHAR(20) DEFAULT 'pending',
+        requestedAt DATETIME2 DEFAULT GETDATE()
+      )
+    `);
+
     // Create Users table
     await pool.request().query(`
       IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Users' AND xtype='U')
@@ -108,6 +140,25 @@ const initializeSchema = async (pool) => {
       )
     `);
 
+    // Create default admin user if no users exist
+    const adminCheck = await pool.request().query('SELECT COUNT(*) as count FROM AuthUsers WHERE role = \'admin\'');
+    if (adminCheck.recordset[0].count === 0) {
+      const adminId = generateId();
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      
+      await pool.request()
+        .input('id', sql.NVarChar, adminId)
+        .input('username', sql.NVarChar, 'admin')
+        .input('email', sql.NVarChar, 'admin@trasportosociale.it')
+        .input('fullName', sql.NVarChar, 'Amministratore')
+        .input('passwordHash', sql.NVarChar, hashedPassword)
+        .input('role', sql.NVarChar, 'admin')
+        .input('isApproved', sql.Bit, true)
+        .query('INSERT INTO AuthUsers (id, username, email, fullName, passwordHash, role, isApproved) VALUES (@id, @username, @email, @fullName, @passwordHash, @role, @isApproved)');
+      
+      console.log('Default admin user created: admin / admin123');
+    }
+
     console.log('Database schema initialized successfully');
   } catch (error) {
     console.error('Error initializing database schema:', error);
@@ -123,20 +174,16 @@ const formatTimeForSQL = (timeString) => {
   if (!timeString) return null;
   
   try {
-    // Remove any extra whitespace
     timeString = timeString.trim();
     
-    // If it's already in HH:MM:SS format, return as is
     if (timeString.match(/^\d{1,2}:\d{2}:\d{2}$/)) {
       return timeString;
     }
     
-    // If it's in HH:MM format, add seconds
     if (timeString.match(/^\d{1,2}:\d{2}$/)) {
       return timeString + ':00';
     }
     
-    // Try to parse and reformat
     const parts = timeString.split(':');
     if (parts.length >= 2) {
       const hours = parseInt(parts[0], 10);
@@ -158,17 +205,14 @@ const formatTimeForDisplay = (timeString) => {
   if (!timeString) return '';
   
   try {
-    // If it's a time object from SQL Server, convert to string first
     if (typeof timeString === 'object' && timeString.getHours) {
       const hours = timeString.getHours().toString().padStart(2, '0');
       const minutes = timeString.getMinutes().toString().padStart(2, '0');
       return `${hours}:${minutes}`;
     }
     
-    // If it's already a string, parse it
     const timeStr = timeString.toString();
     
-    // Handle HH:MM:SS.sssssss format from SQL Server
     if (timeStr.includes(':')) {
       const parts = timeStr.split(':');
       if (parts.length >= 2) {
@@ -204,8 +248,201 @@ const formatDateForDisplay = (dateValue) => {
   }
 };
 
+// Auth middleware
+const authenticateToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('id', sql.NVarChar, decoded.userId)
+      .query('SELECT id, username, email, fullName, role, isApproved FROM AuthUsers WHERE id = @id AND isApproved = 1');
+    
+    if (result.recordset.length === 0) {
+      return res.status(401).json({ error: 'Invalid token or user not approved' });
+    }
+    
+    req.user = result.recordset[0];
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'Invalid token' });
+  }
+};
+
+// Admin middleware
+const requireAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
+// Auth endpoints
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { username, email, fullName, password } = req.body;
+    
+    if (!username || !email || !fullName || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const pool = await poolPromise;
+    
+    // Check if username or email already exists
+    const existingUser = await pool.request()
+      .input('username', sql.NVarChar, username)
+      .input('email', sql.NVarChar, email)
+      .query('SELECT id FROM AuthUsers WHERE username = @username OR email = @email UNION SELECT id FROM AccessRequests WHERE username = @username OR email = @email');
+    
+    if (existingUser.recordset.length > 0) {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+
+    const id = generateId();
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    await pool.request()
+      .input('id', sql.NVarChar, id)
+      .input('username', sql.NVarChar, username)
+      .input('email', sql.NVarChar, email)
+      .input('fullName', sql.NVarChar, fullName)
+      .input('passwordHash', sql.NVarChar, hashedPassword)
+      .query('INSERT INTO AccessRequests (id, username, email, fullName, passwordHash) VALUES (@id, @username, @email, @fullName, @passwordHash)');
+    
+    res.status(201).json({ message: 'Registration request submitted. Wait for admin approval.' });
+  } catch (error) {
+    console.error('Error during registration:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('username', sql.NVarChar, username)
+      .query('SELECT * FROM AuthUsers WHERE username = @username AND isApproved = 1');
+    
+    if (result.recordset.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials or account not approved' });
+    }
+
+    const user = result.recordset[0];
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
+    
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isApproved: user.isApproved,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Error during login:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/auth/verify', authenticateToken, (req, res) => {
+  res.json(req.user);
+});
+
+app.get('/api/auth/access-requests', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query('SELECT id, username, email, fullName, status, requestedAt FROM AccessRequests ORDER BY requestedAt DESC');
+    res.json(result.recordset);
+  } catch (error) {
+    console.error('Error fetching access requests:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/access-requests/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pool = await poolPromise;
+    
+    // Get the request
+    const requestResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM AccessRequests WHERE id = @id AND status = \'pending\'');
+    
+    if (requestResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'Request not found or already processed' });
+    }
+
+    const request = requestResult.recordset[0];
+    const userId = generateId();
+    
+    // Create user in AuthUsers
+    await pool.request()
+      .input('id', sql.NVarChar, userId)
+      .input('username', sql.NVarChar, request.username)
+      .input('email', sql.NVarChar, request.email)
+      .input('fullName', sql.NVarChar, request.fullName)
+      .input('passwordHash', sql.NVarChar, request.passwordHash)
+      .input('role', sql.NVarChar, 'user')
+      .input('isApproved', sql.Bit, true)
+      .query('INSERT INTO AuthUsers (id, username, email, fullName, passwordHash, role, isApproved) VALUES (@id, @username, @email, @fullName, @passwordHash, @role, @isApproved)');
+    
+    // Update request status
+    await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('UPDATE AccessRequests SET status = \'approved\' WHERE id = @id');
+    
+    res.json({ message: 'Request approved successfully' });
+  } catch (error) {
+    console.error('Error approving request:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/access-requests/:id/reject', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pool = await poolPromise;
+    
+    await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('UPDATE AccessRequests SET status = \'rejected\' WHERE id = @id');
+    
+    res.json({ message: 'Request rejected successfully' });
+  } catch (error) {
+    console.error('Error rejecting request:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Users endpoints
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', authenticateToken, async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Users ORDER BY createdAt DESC');
@@ -216,7 +453,7 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', authenticateToken, async (req, res) => {
   try {
     const { name, phone, address, notes } = req.body;
     const id = generateId();
@@ -241,7 +478,7 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-app.put('/api/users/:id', async (req, res) => {
+app.put('/api/users/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, phone, address, notes } = req.body;
@@ -266,7 +503,7 @@ app.put('/api/users/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/users/:id', async (req, res) => {
+app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const pool = await poolPromise;
@@ -283,7 +520,7 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 // Drivers endpoints
-app.get('/api/drivers', async (req, res) => {
+app.get('/api/drivers', authenticateToken, async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Drivers ORDER BY createdAt DESC');
@@ -294,7 +531,7 @@ app.get('/api/drivers', async (req, res) => {
   }
 });
 
-app.post('/api/drivers', async (req, res) => {
+app.post('/api/drivers', authenticateToken, async (req, res) => {
   try {
     const { name, phone, licenseNumber, notes } = req.body;
     const id = generateId();
@@ -319,7 +556,7 @@ app.post('/api/drivers', async (req, res) => {
   }
 });
 
-app.put('/api/drivers/:id', async (req, res) => {
+app.put('/api/drivers/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, phone, licenseNumber, notes } = req.body;
@@ -344,7 +581,7 @@ app.put('/api/drivers/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/drivers/:id', async (req, res) => {
+app.delete('/api/drivers/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const pool = await poolPromise;
@@ -361,7 +598,7 @@ app.delete('/api/drivers/:id', async (req, res) => {
 });
 
 // Destinations endpoints
-app.get('/api/destinations', async (req, res) => {
+app.get('/api/destinations', authenticateToken, async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Destinations ORDER BY createdAt DESC');
@@ -372,7 +609,7 @@ app.get('/api/destinations', async (req, res) => {
   }
 });
 
-app.post('/api/destinations', async (req, res) => {
+app.post('/api/destinations', authenticateToken, async (req, res) => {
   try {
     const { name, address, cost, notes } = req.body;
     const id = generateId();
@@ -397,7 +634,7 @@ app.post('/api/destinations', async (req, res) => {
   }
 });
 
-app.put('/api/destinations/:id', async (req, res) => {
+app.put('/api/destinations/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, address, cost, notes } = req.body;
@@ -422,7 +659,7 @@ app.put('/api/destinations/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/destinations/:id', async (req, res) => {
+app.delete('/api/destinations/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const pool = await poolPromise;
@@ -439,7 +676,7 @@ app.delete('/api/destinations/:id', async (req, res) => {
 });
 
 // Transports endpoints
-app.get('/api/transports', async (req, res) => {
+app.get('/api/transports', authenticateToken, async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
@@ -458,7 +695,7 @@ app.get('/api/transports', async (req, res) => {
   }
 });
 
-app.post('/api/transports', async (req, res) => {
+app.post('/api/transports', authenticateToken, async (req, res) => {
   try {
     const { date, time, userId, driverId, destinationId, notes } = req.body;
     const id = generateId();
@@ -507,7 +744,7 @@ app.post('/api/transports', async (req, res) => {
   }
 });
 
-app.put('/api/transports/:id', async (req, res) => {
+app.put('/api/transports/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { date, time, userId, driverId, destinationId, notes } = req.body;
@@ -557,7 +794,7 @@ app.put('/api/transports/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/transports/:id', async (req, res) => {
+app.delete('/api/transports/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const pool = await poolPromise;

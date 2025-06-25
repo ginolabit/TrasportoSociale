@@ -169,15 +169,15 @@ const initializeSchema = async (pool) => {
 // Helper function to generate ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// Helper function to format time for SQL Server - mantiene l'ora esatta
+// Helper function to format time for SQL Server - SEMPLIFICATO
 const formatTimeForSQL = (timeString) => {
   if (!timeString) return null;
   
   try {
-    // Rimuovi spazi e normalizza
+    // Rimuovi spazi
     timeString = timeString.trim();
     
-    // Se è già nel formato HH:MM:SS, restituiscilo così com'è
+    // Se è già nel formato HH:MM:SS, va bene
     if (timeString.match(/^\d{1,2}:\d{2}:\d{2}$/)) {
       return timeString;
     }
@@ -187,57 +187,33 @@ const formatTimeForSQL = (timeString) => {
       return timeString + ':00';
     }
     
-    // Parsing manuale per evitare problemi di timezone
-    const parts = timeString.split(':');
-    if (parts.length >= 2) {
-      const hours = parseInt(parts[0], 10);
-      const minutes = parseInt(parts[1], 10);
-      
-      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
-      }
-    }
+    console.error('Invalid time format:', timeString);
+    return null;
   } catch (error) {
     console.error('Error parsing time:', error);
+    return null;
   }
-  
-  return null;
 };
 
-// Helper function to format time for display - mantiene l'ora originale
+// Helper function to format time for display - SEMPLIFICATO
 const formatTimeForDisplay = (timeValue) => {
   if (!timeValue) return '';
   
   try {
-    // Se è una stringa nel formato HH:MM o HH:MM:SS
-    if (typeof timeValue === 'string') {
-      const parts = timeValue.split(':');
+    // Converti tutto in stringa
+    const timeStr = timeValue.toString();
+    
+    // Se contiene i due punti, prendi solo HH:MM
+    if (timeStr.includes(':')) {
+      const parts = timeStr.split(':');
       if (parts.length >= 2) {
-        const hours = parseInt(parts[0], 10).toString().padStart(2, '0');
-        const minutes = parseInt(parts[1], 10).toString().padStart(2, '0');
-        return `${hours}:${minutes}`;
-      }
-      return timeValue;
-    }
-    
-    // Se è un oggetto Date o simile
-    if (timeValue && typeof timeValue === 'object') {
-      // Per SQL Server TIME type, potrebbe essere un oggetto con proprietà specifiche
-      if (timeValue.getHours && typeof timeValue.getHours === 'function') {
-        const hours = timeValue.getHours().toString().padStart(2, '0');
-        const minutes = timeValue.getMinutes().toString().padStart(2, '0');
-        return `${hours}:${minutes}`;
-      }
-      
-      // Se ha proprietà hours e minutes
-      if (timeValue.hours !== undefined && timeValue.minutes !== undefined) {
-        const hours = parseInt(timeValue.hours, 10).toString().padStart(2, '0');
-        const minutes = parseInt(timeValue.minutes, 10).toString().padStart(2, '0');
+        const hours = parts[0].padStart(2, '0');
+        const minutes = parts[1].padStart(2, '0');
         return `${hours}:${minutes}`;
       }
     }
     
-    return timeValue.toString();
+    return timeStr;
   } catch (error) {
     console.error('Error formatting time for display:', error);
     return timeValue ? timeValue.toString() : '';
@@ -696,7 +672,7 @@ app.get('/api/transports', authenticateToken, async (req, res) => {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
     
-    // Format the data for display - mantiene l'ora originale
+    // Format the data for display
     const formattedTransports = result.recordset.map(transport => ({
       ...transport,
       date: formatDateForDisplay(transport.date),
@@ -716,7 +692,7 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
     const id = generateId();
     const pool = await poolPromise;
     
-    // Format time for SQL Server - mantiene l'ora esatta
+    // Format time for SQL Server
     const formattedTime = formatTimeForSQL(time);
     if (!formattedTime) {
       console.error('Invalid time format received:', time);
@@ -728,7 +704,7 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('date', sql.Date, date)
-      .input('time', sql.Time, formattedTime)
+      .input('time', sql.VarChar, formattedTime) // Usa VarChar invece di Time per evitare problemi
       .input('userId', sql.NVarChar, userId)
       .input('driverId', sql.NVarChar, driverId)
       .input('destinationId', sql.NVarChar, destinationId)
@@ -739,7 +715,7 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    // Format the response data - mantiene l'ora originale
+    // Format the response data
     const transport = result.recordset[0];
     const formattedTransport = {
       ...transport,
@@ -760,7 +736,7 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
     const { date, time, userId, driverId, destinationId, notes } = req.body;
     const pool = await poolPromise;
     
-    // Format time for SQL Server - mantiene l'ora esatta
+    // Format time for SQL Server
     const formattedTime = formatTimeForSQL(time);
     if (!formattedTime) {
       console.error('Invalid time format received:', time);
@@ -772,7 +748,7 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('date', sql.Date, date)
-      .input('time', sql.Time, formattedTime)
+      .input('time', sql.VarChar, formattedTime) // Usa VarChar invece di Time per evitare problemi
       .input('userId', sql.NVarChar, userId)
       .input('driverId', sql.NVarChar, driverId)
       .input('destinationId', sql.NVarChar, destinationId)
@@ -783,7 +759,7 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    // Format the response data - mantiene l'ora originale
+    // Format the response data
     const transport = result.recordset[0];
     const formattedTransport = {
       ...transport,

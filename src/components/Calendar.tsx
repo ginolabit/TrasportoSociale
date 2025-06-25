@@ -105,7 +105,8 @@ export default function Calendar({
     
     if (draggedTransport && draggedTransport.date !== targetDate) {
       // IMPORTANTE: Mantieni esattamente la stessa ora quando sposti l'evento
-      // Non fare conversioni di timezone o modifiche all'ora
+      console.log('Drag & Drop - Ora originale:', draggedTransport.time);
+      
       onUpdateTransport(draggedTransport.id, {
         date: targetDate,
         time: draggedTransport.time, // Mantieni l'ora ESATTA originale
@@ -123,7 +124,7 @@ export default function Calendar({
     setDraggedTransport(null);
   };
 
-  // Funzione per formattare l'ora senza conversioni di timezone
+  // Funzione per formattare l'ora senza conversioni di timezone - SEMPLIFICATA
   const formatDisplayTime = (timeString: string) => {
     if (!timeString) return '';
     

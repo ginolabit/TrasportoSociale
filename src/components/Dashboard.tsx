@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Calendar, Users, Car, MapPin, Pencil } from 'lucide-react';
 import { Transport, User, Driver, Destination } from '../types';
 import TransportModal from './TransportModal';
@@ -29,8 +29,23 @@ export default function Dashboard({
   const [selectedTransport, setSelectedTransport] = useState<Transport | null>(null);
   const [showModal, setShowModal] = useState(false);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('📊 Dashboard - Transports received:', transports.length);
+    console.log('📊 Dashboard - Sample transport:', transports[0]);
+  }, [transports]);
+
   const today = new Date();
-  const todayTransports = transports.filter(t => t.date === today.toISOString().split('T')[0]);
+  const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+  
+  console.log('📅 Today string:', todayString);
+  
+  const todayTransports = transports.filter(t => {
+    console.log('🔍 Checking transport date:', t.date, 'vs today:', todayString);
+    return t.date === todayString;
+  });
+
+  console.log('📊 Today\'s transports:', todayTransports.length);
 
   const handleEditTransport = (transport: Transport) => {
     setSelectedTransport(transport);
@@ -139,61 +154,96 @@ export default function Dashboard({
       }`}>
         <div className={`p-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            Trasporti di Oggi
+            Trasporti di Oggi ({todayString})
           </h2>
         </div>
         <div className="p-6">
           {todayTransports.length === 0 ? (
-            <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
-              Nessun trasporto programmato per oggi
-            </p>
+            <div className="text-center py-8">
+              <Calendar className={`h-12 w-12 mx-auto mb-4 ${
+                darkMode ? 'text-gray-600' : 'text-gray-400'
+              }`} />
+              <p className={`text-lg font-medium ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>
+                Nessun trasporto programmato per oggi
+              </p>
+              <p className={`mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                Clicca su "Nuovo Trasporto" per aggiungerne uno
+              </p>
+            </div>
           ) : (
             <div className="space-y-4">
-              {todayTransports.map((transport) => {
-                const user = users.find(u => u.id === transport.userId);
-                const driver = drivers.find(d => d.id === transport.driverId);
-                const destination = destinations.find(d => d.id === transport.destinationId);
-                
-                return (
-                  <div key={transport.id} className={`flex items-center justify-between p-4 rounded-lg ${
-                    darkMode ? 'bg-gray-700' : 'bg-gray-50'
-                  }`}>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-4">
-                        <span className="font-medium text-blue-600">{transport.time}</span>
-                        <span className={darkMode ? 'text-white' : 'text-gray-900'}>{user?.name}</span>
-                        <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>→</span>
-                        <span className={darkMode ? 'text-white' : 'text-gray-900'}>{destination?.name}</span>
-                        <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>con</span>
-                        <span className={darkMode ? 'text-white' : 'text-gray-900'}>{driver?.name}</span>
+              {todayTransports
+                .sort((a, b) => a.time.localeCompare(b.time)) // Ordina per ora
+                .map((transport) => {
+                  const user = users.find(u => u.id === transport.userId);
+                  const driver = drivers.find(d => d.id === transport.driverId);
+                  const destination = destinations.find(d => d.id === transport.destinationId);
+                  
+                  return (
+                    <div key={transport.id} className={`flex items-center justify-between p-4 rounded-lg border ${
+                      darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 flex-wrap">
+                          <span className="font-bold text-blue-600 text-lg">{transport.time}</span>
+                          <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {user?.name || 'Utente sconosciuto'}
+                          </span>
+                          <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>→</span>
+                          <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {destination?.name || 'Destinazione sconosciuta'}
+                          </span>
+                          <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>con</span>
+                          <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {driver?.name || 'Autista sconosciuto'}
+                          </span>
+                        </div>
+                        {transport.notes && (
+                          <p className={`text-sm mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                            📝 {transport.notes}
+                          </p>
+                        )}
                       </div>
-                      {transport.notes && (
-                        <p className={`text-sm mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          {transport.notes}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-3 ml-4">
+                        <span className="text-sm font-bold text-green-600 bg-green-100 px-2 py-1 rounded">
+                          €{destination?.cost.toFixed(2) || '0.00'}
+                        </span>
+                        <button
+                          onClick={() => handleEditTransport(transport)}
+                          className={`p-2 rounded hover:bg-gray-200 ${
+                            darkMode ? 'hover:bg-gray-600 text-gray-400' : 'text-gray-500'
+                          }`}
+                          title="Modifica trasporto"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-green-600">
-                        €{destination?.cost.toFixed(2)}
-                      </span>
-                      <button
-                        onClick={() => handleEditTransport(transport)}
-                        className={`p-1 rounded hover:bg-gray-200 ${
-                          darkMode ? 'hover:bg-gray-600 text-gray-400' : 'text-gray-500'
-                        }`}
-                        title="Modifica"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           )}
         </div>
       </div>
+
+      {/* Debug Info - Solo in development */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className={`rounded-lg shadow-sm border p-4 ${
+          darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+        }`}>
+          <h3 className={`text-sm font-medium mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            Debug Info
+          </h3>
+          <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+            <p>Total transports: {transports.length}</p>
+            <p>Today's transports: {todayTransports.length}</p>
+            <p>Today string: {todayString}</p>
+            {transports.length > 0 && (
+              <p>Sample transport date: {transports[0]?.date}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Transport Modal */}
       {showModal && (

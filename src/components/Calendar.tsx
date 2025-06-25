@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Transport, User, Driver, Destination } from '../types';
 import TransportModal from './TransportModal';
@@ -32,6 +32,12 @@ export default function Calendar({
 
   const [view, setView] = useState<'month' | 'week' | 'day'>('month');
 
+  // Debug logging
+  useEffect(() => {
+    console.log('📊 Calendar - Transports received:', transports.length);
+    console.log('📊 Calendar - Sample transport:', transports[0]);
+  }, [transports]);
+
   const today = new Date();
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -62,7 +68,9 @@ export default function Calendar({
   };
 
   const getTransportsForDate = (date: string) => {
-    return transports.filter(t => t.date === date);
+    const transportsForDate = transports.filter(t => t.date === date);
+    console.log(`📅 Transports for ${date}:`, transportsForDate.length);
+    return transportsForDate;
   };
 
   const handleDateClick = (day: number, event: React.MouseEvent) => {
@@ -105,7 +113,7 @@ export default function Calendar({
     
     if (draggedTransport && draggedTransport.date !== targetDate) {
       // MANTIENI ESATTAMENTE LA STESSA ORA
-      console.log('Drag & Drop - Ora originale:', draggedTransport.time);
+      console.log('🔄 Drag & Drop - Ora originale:', draggedTransport.time);
       
       onUpdateTransport(draggedTransport.id, {
         date: targetDate,
@@ -268,26 +276,28 @@ export default function Calendar({
             Nessun trasporto
           </div>
         )}
-        {dayTransports.map((transport) => {
-          const user = users.find(u => u.id === transport.userId);
-          const destination = destinations.find(d => d.id === transport.destinationId);
-          
-          return (
-            <div
-              key={transport.id}
-              className={`transport-event mb-2 p-2 bg-blue-100 text-blue-800 rounded cursor-pointer hover:bg-blue-200 transition-colors ${
-                darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''
-              }`}
-              onClick={(e) => handleTransportClick(transport, e)}
-              title="Clicca per modificare"
-            >
-              <div><b>Ora:</b> {transport.time}</div>
-              <div><b>Utente:</b> {user?.name}</div>
-              <div><b>Destinazione:</b> {destination?.name}</div>
-              {transport.notes && <div><b>Note:</b> {transport.notes}</div>}
-            </div>
-          );
-        })}
+        {dayTransports
+          .sort((a, b) => a.time.localeCompare(b.time)) // Ordina per ora
+          .map((transport) => {
+            const user = users.find(u => u.id === transport.userId);
+            const destination = destinations.find(d => d.id === transport.destinationId);
+            
+            return (
+              <div
+                key={transport.id}
+                className={`transport-event mb-2 p-3 bg-blue-100 text-blue-800 rounded cursor-pointer hover:bg-blue-200 transition-colors ${
+                  darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''
+                }`}
+                onClick={(e) => handleTransportClick(transport, e)}
+                title="Clicca per modificare"
+              >
+                <div className="font-bold text-lg">{transport.time}</div>
+                <div><strong>Utente:</strong> {user?.name}</div>
+                <div><strong>Destinazione:</strong> {destination?.name}</div>
+                {transport.notes && <div><strong>Note:</strong> {transport.notes}</div>}
+              </div>
+            );
+          })}
       </div>
     );
   };
@@ -377,6 +387,16 @@ export default function Calendar({
       }`}>
         💡 <strong>Suggerimenti:</strong> Clicca su un evento per modificarlo, trascina gli eventi per spostarli in altre date (l'ora rimane invariata), clicca su una data vuota per aggiungere un nuovo trasporto.
       </div>
+
+      {/* Debug Info - Solo in development */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className={`mb-4 p-3 rounded-lg text-xs ${
+          darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
+        }`}>
+          <strong>Debug:</strong> Trasporti totali: {transports.length}
+          {transports.length > 0 && ` | Primo trasporto: ${transports[0]?.date} ${transports[0]?.time}`}
+        </div>
+      )}
 
       {/* Render in base alla vista */}
       {view === 'month' && (

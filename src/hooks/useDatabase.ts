@@ -23,8 +23,9 @@ export function useDatabase() {
     }
   };
 
-  // Load all data
+  // Load all data with enhanced logging
   const loadAllData = async () => {
+    console.log('🔄 Loading all data...');
     setLoading(true);
     setError(null);
     
@@ -34,6 +35,8 @@ export function useDatabase() {
         throw new Error('Database connection failed');
       }
 
+      console.log('✅ Database connection OK, fetching data...');
+
       const [usersData, driversData, destinationsData, transportsData] = await Promise.all([
         usersApi.getAll(),
         driversApi.getAll(),
@@ -41,14 +44,22 @@ export function useDatabase() {
         transportsApi.getAll(),
       ]);
 
-      console.log('Loaded transports:', transportsData); // Debug log
+      console.log('📊 Data loaded:');
+      console.log('- Users:', usersData.length);
+      console.log('- Drivers:', driversData.length);
+      console.log('- Destinations:', destinationsData.length);
+      console.log('- Transports:', transportsData.length);
+      console.log('- Sample transport:', transportsData[0]);
 
-      setUsers(usersData);
-      setDrivers(driversData);
-      setDestinations(destinationsData);
-      setTransports(transportsData);
+      // FORCE STATE UPDATE - Assicuriamoci che lo stato si aggiorni
+      setUsers([...usersData]);
+      setDrivers([...driversData]);
+      setDestinations([...destinationsData]);
+      setTransports([...transportsData]);
+
+      console.log('✅ State updated successfully');
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('❌ Error loading data:', error);
       setError(error instanceof Error ? error.message : 'Failed to load data');
     } finally {
       setLoading(false);
@@ -160,23 +171,25 @@ export function useDatabase() {
     }
   };
 
-  // Transport operations - FIXED
+  // Transport operations - COMPLETAMENTE RIVISTI
   const addTransport = async (transportData: Omit<Transport, 'id' | 'createdAt'>) => {
     try {
-      console.log('Adding transport:', transportData); // Debug log
+      console.log('🚀 Adding transport:', transportData);
+      
       const newTransport = await transportsApi.create(transportData);
-      console.log('Transport created:', newTransport); // Debug log
+      console.log('✅ Transport created on server:', newTransport);
       
       // AGGIORNA IMMEDIATAMENTE lo stato locale
       setTransports(prev => {
         const updated = [newTransport, ...prev];
-        console.log('Updated transports state:', updated); // Debug log
+        console.log('📊 Updated transports state (add):', updated.length, 'items');
         return updated;
       });
       
+      console.log('✅ Transport added successfully');
       return newTransport;
     } catch (error) {
-      console.error('Error adding transport:', error);
+      console.error('❌ Error adding transport:', error);
       setError(error instanceof Error ? error.message : 'Failed to add transport');
       throw error;
     }
@@ -184,20 +197,22 @@ export function useDatabase() {
 
   const updateTransport = async (id: string, transportData: Omit<Transport, 'id' | 'createdAt'>) => {
     try {
-      console.log('Updating transport:', id, transportData); // Debug log
+      console.log('🔄 Updating transport:', id, transportData);
+      
       const updatedTransport = await transportsApi.update(id, transportData);
-      console.log('Transport updated:', updatedTransport); // Debug log
+      console.log('✅ Transport updated on server:', updatedTransport);
       
       // AGGIORNA IMMEDIATAMENTE lo stato locale
       setTransports(prev => {
         const updated = prev.map(transport => transport.id === id ? updatedTransport : transport);
-        console.log('Updated transports state:', updated); // Debug log
+        console.log('📊 Updated transports state (update):', updated.length, 'items');
         return updated;
       });
       
+      console.log('✅ Transport updated successfully');
       return updatedTransport;
     } catch (error) {
-      console.error('Error updating transport:', error);
+      console.error('❌ Error updating transport:', error);
       setError(error instanceof Error ? error.message : 'Failed to update transport');
       throw error;
     }
@@ -205,17 +220,21 @@ export function useDatabase() {
 
   const deleteTransport = async (id: string) => {
     try {
-      console.log('Deleting transport:', id); // Debug log
+      console.log('🗑️ Deleting transport:', id);
+      
       await transportsApi.delete(id);
+      console.log('✅ Transport deleted on server');
       
       // AGGIORNA IMMEDIATAMENTE lo stato locale
       setTransports(prev => {
         const updated = prev.filter(transport => transport.id !== id);
-        console.log('Updated transports state after delete:', updated); // Debug log
+        console.log('📊 Updated transports state (delete):', updated.length, 'items');
         return updated;
       });
+      
+      console.log('✅ Transport deleted successfully');
     } catch (error) {
-      console.error('Error deleting transport:', error);
+      console.error('❌ Error deleting transport:', error);
       setError(error instanceof Error ? error.message : 'Failed to delete transport');
       throw error;
     }
@@ -224,10 +243,35 @@ export function useDatabase() {
   // Clear error
   const clearError = () => setError(null);
 
-  // Initial data load
+  // Initial data load with retry mechanism
   useEffect(() => {
-    loadAllData();
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    const loadWithRetry = async () => {
+      try {
+        await loadAllData();
+      } catch (error) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retry ${retryCount}/${maxRetries} in 2 seconds...`);
+          setTimeout(loadWithRetry, 2000);
+        } else {
+          console.error('❌ Max retries reached, giving up');
+        }
+      }
+    };
+    
+    loadWithRetry();
   }, []);
+
+  // Debug logging for state changes
+  useEffect(() => {
+    console.log('📊 Transports state changed:', transports.length, 'items');
+    if (transports.length > 0) {
+      console.log('📊 Sample transport:', transports[0]);
+    }
+  }, [transports]);
 
   return {
     // Data

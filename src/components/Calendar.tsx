@@ -104,7 +104,7 @@ export default function Calendar({
     event.preventDefault();
     
     if (draggedTransport && draggedTransport.date !== targetDate) {
-      // IMPORTANTE: Mantieni esattamente la stessa ora quando sposti l'evento
+      // MANTIENI ESATTAMENTE LA STESSA ORA
       console.log('Drag & Drop - Ora originale:', draggedTransport.time);
       
       onUpdateTransport(draggedTransport.id, {
@@ -122,38 +122,6 @@ export default function Calendar({
 
   const handleDragEnd = () => {
     setDraggedTransport(null);
-  };
-
-  // Funzione per formattare l'ora - SEMPLIFICATA E CORRETTA
-  const formatDisplayTime = (timeString: string) => {
-    if (!timeString) return '';
-    
-    try {
-      // Se è già nel formato HH:MM, restituiscilo così com'è
-      if (timeString.match(/^\d{2}:\d{2}$/)) {
-        return timeString;
-      }
-      
-      // Se contiene i due punti, prendi solo HH:MM
-      if (timeString.includes(':')) {
-        const parts = timeString.split(':');
-        if (parts.length >= 2) {
-          const hours = parseInt(parts[0], 10);
-          const minutes = parseInt(parts[1], 10);
-          
-          // Verifica che siano numeri validi
-          if (!isNaN(hours) && !isNaN(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-          }
-        }
-      }
-      
-      // Se non riesce a parsare, restituisci la stringa originale
-      return timeString;
-    } catch (error) {
-      console.error('Error formatting time:', error);
-      return timeString;
-    }
   };
 
   // --- VISTA MESE ---
@@ -198,13 +166,13 @@ export default function Calendar({
                   className={`transport-event text-xs bg-blue-100 text-blue-800 p-1 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors ${
                     isDragging ? 'opacity-50' : ''
                   } ${darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''}`}
-                  title={`${formatDisplayTime(transport.time)} - ${user?.name} → ${destination?.name}`}
+                  title={`${transport.time} - ${user?.name} → ${destination?.name}`}
                   draggable
                   onDragStart={(e) => handleDragStart(transport, e)}
                   onDragEnd={handleDragEnd}
                   onClick={(e) => handleTransportClick(transport, e)}
                 >
-                  {formatDisplayTime(transport.time)} {user?.name}
+                  {transport.time} {user?.name}
                 </div>
               );
             })}
@@ -268,13 +236,13 @@ export default function Calendar({
                   className={`transport-event text-xs bg-blue-100 text-blue-800 p-1 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors ${
                     isDragging ? 'opacity-50' : ''
                   } ${darkMode ? 'bg-blue-900 text-blue-200 hover:bg-blue-800' : ''}`}
-                  title={`${formatDisplayTime(transport.time)} - ${user?.name} → ${destination?.name}`}
+                  title={`${transport.time} - ${user?.name} → ${destination?.name}`}
                   draggable
                   onDragStart={(e) => handleDragStart(transport, e)}
                   onDragEnd={handleDragEnd}
                   onClick={(e) => handleTransportClick(transport, e)}
                 >
-                  {formatDisplayTime(transport.time)} {user?.name}
+                  {transport.time} {user?.name}
                 </div>
               );
             })}
@@ -313,7 +281,7 @@ export default function Calendar({
               onClick={(e) => handleTransportClick(transport, e)}
               title="Clicca per modificare"
             >
-              <div><b>Ora:</b> {formatDisplayTime(transport.time)}</div>
+              <div><b>Ora:</b> {transport.time}</div>
               <div><b>Utente:</b> {user?.name}</div>
               <div><b>Destinazione:</b> {destination?.name}</div>
               {transport.notes && <div><b>Note:</b> {transport.notes}</div>}

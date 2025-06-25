@@ -122,22 +122,65 @@ const initializeSchema = async (pool) => {
       )
     `);
 
-    // Create Transports table
+    // AGGIORNA la tabella Transports per usare NVARCHAR per il campo time
     await pool.request().query(`
-      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Transports' AND xtype='U')
-      CREATE TABLE Transports (
-        id NVARCHAR(50) PRIMARY KEY,
-        date DATE NOT NULL,
-        time NVARCHAR(8) NOT NULL,
-        userId NVARCHAR(50) NOT NULL,
-        driverId NVARCHAR(50) NOT NULL,
-        destinationId NVARCHAR(50) NOT NULL,
-        notes NVARCHAR(1000),
-        createdAt DATETIME2 DEFAULT GETDATE(),
-        FOREIGN KEY (userId) REFERENCES Users(id) ON DELETE CASCADE,
-        FOREIGN KEY (driverId) REFERENCES Drivers(id) ON DELETE CASCADE,
-        FOREIGN KEY (destinationId) REFERENCES Destinations(id) ON DELETE CASCADE
-      )
+      IF EXISTS (SELECT * FROM sysobjects WHERE name='Transports' AND xtype='U')
+      BEGIN
+        -- Controlla se il campo time è ancora di tipo TIME
+        IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                   WHERE TABLE_NAME = 'Transports' AND COLUMN_NAME = 'time' 
+                   AND DATA_TYPE = 'time')
+        BEGIN
+          -- Crea una tabella temporanea con la nuova struttura
+          CREATE TABLE Transports_New (
+            id NVARCHAR(50) PRIMARY KEY,
+            date DATE NOT NULL,
+            time NVARCHAR(8) NOT NULL,
+            userId NVARCHAR(50) NOT NULL,
+            driverId NVARCHAR(50) NOT NULL,
+            destinationId NVARCHAR(50) NOT NULL,
+            notes NVARCHAR(1000),
+            createdAt DATETIME2 DEFAULT GETDATE(),
+            FOREIGN KEY (userId) REFERENCES Users(id) ON DELETE CASCADE,
+            FOREIGN KEY (driverId) REFERENCES Drivers(id) ON DELETE CASCADE,
+            FOREIGN KEY (destinationId) REFERENCES Destinations(id) ON DELETE CASCADE
+          );
+          
+          -- Copia i dati esistenti convertendo il campo time
+          INSERT INTO Transports_New (id, date, time, userId, driverId, destinationId, notes, createdAt)
+          SELECT id, date, 
+                 FORMAT(CAST(time AS TIME), 'HH\\:mm') as time,
+                 userId, driverId, destinationId, notes, createdAt
+          FROM Transports;
+          
+          -- Elimina la tabella vecchia
+          DROP TABLE Transports;
+          
+          -- Rinomina la nuova tabella
+          EXEC sp_rename 'Transports_New', 'Transports';
+          
+          PRINT 'Transports table updated successfully - time field converted to NVARCHAR(8)';
+        END
+      END
+      ELSE
+      BEGIN
+        -- Crea la tabella da zero con la struttura corretta
+        CREATE TABLE Transports (
+          id NVARCHAR(50) PRIMARY KEY,
+          date DATE NOT NULL,
+          time NVARCHAR(8) NOT NULL,
+          userId NVARCHAR(50) NOT NULL,
+          driverId NVARCHAR(50) NOT NULL,
+          destinationId NVARCHAR(50) NOT NULL,
+          notes NVARCHAR(1000),
+          createdAt DATETIME2 DEFAULT GETDATE(),
+          FOREIGN KEY (userId) REFERENCES Users(id) ON DELETE CASCADE,
+          FOREIGN KEY (driverId) REFERENCES Drivers(id) ON DELETE CASCADE,
+          FOREIGN KEY (destinationId) REFERENCES Destinations(id) ON DELETE CASCADE
+        );
+        
+        PRINT 'Transports table created successfully with NVARCHAR(8) time field';
+      END
     `);
 
     // Create default admin user if no users exist
@@ -169,17 +212,16 @@ const initializeSchema = async (pool) => {
 // Helper function to generate ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// Helper function to format time for SQL Server - CORRETTO
-const formatTimeForSQL = (timeString) => {
-  if (!timeString) return null;
+// Helper function to validate and format time - SEMPLIFICATO
+const validateAndFormatTime = (timeInput) => {
+  if (!timeInput) return null;
   
   try {
-    // Rimuovi spazi e converti in stringa
-    const cleanTime = timeString.toString().trim();
+    const timeStr = timeInput.toString().trim();
     
-    // Verifica formato HH:MM o H:MM
+    // Regex per HH:MM (accetta anche H:MM)
     const timeRegex = /^(\d{1,2}):(\d{2})$/;
-    const match = cleanTime.match(timeRegex);
+    const match = timeStr.match(timeRegex);
     
     if (match) {
       const hours = parseInt(match[1], 10);
@@ -191,78 +233,11 @@ const formatTimeForSQL = (timeString) => {
       }
     }
     
-    // Se è già nel formato HH:MM:SS, prendi solo HH:MM
-    const timeWithSecondsRegex = /^(\d{1,2}):(\d{2}):(\d{2})$/;
-    const matchWithSeconds = cleanTime.match(timeWithSecondsRegex);
-    
-    if (matchWithSeconds) {
-      const hours = parseInt(matchWithSeconds[1], 10);
-      const minutes = parseInt(matchWithSeconds[2], 10);
-      
-      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-      }
-    }
-    
-    console.error('Invalid time format:', timeString);
+    console.error('Invalid time format:', timeInput);
     return null;
   } catch (error) {
-    console.error('Error parsing time:', error);
+    console.error('Error validating time:', error);
     return null;
-  }
-};
-
-// Helper function to format time for display - CORRETTO
-const formatTimeForDisplay = (timeValue) => {
-  if (!timeValue) return '';
-  
-  try {
-    // Converti tutto in stringa
-    const timeStr = timeValue.toString().trim();
-    
-    // Se è già nel formato corretto HH:MM, restituiscilo
-    if (timeStr.match(/^\d{2}:\d{2}$/)) {
-      return timeStr;
-    }
-    
-    // Se contiene i due punti, prendi solo HH:MM
-    if (timeStr.includes(':')) {
-      const parts = timeStr.split(':');
-      if (parts.length >= 2) {
-        const hours = parseInt(parts[0], 10);
-        const minutes = parseInt(parts[1], 10);
-        
-        // Verifica che siano numeri validi
-        if (!isNaN(hours) && !isNaN(minutes)) {
-          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-        }
-      }
-    }
-    
-    // Se non riesce a parsare, restituisci la stringa originale
-    return timeStr;
-  } catch (error) {
-    console.error('Error formatting time for display:', error);
-    return timeValue ? timeValue.toString() : '';
-  }
-};
-
-// Helper function to format date for display (YYYY-MM-DD)
-const formatDateForDisplay = (dateValue) => {
-  if (!dateValue) return '';
-  
-  try {
-    const date = new Date(dateValue);
-    if (isNaN(date.getTime())) return dateValue;
-    
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
-  } catch (error) {
-    console.error('Error formatting date for display:', error);
-    return dateValue;
   }
 };
 
@@ -699,14 +674,8 @@ app.get('/api/transports', authenticateToken, async (req, res) => {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
     
-    // Format the data for display
-    const formattedTransports = result.recordset.map(transport => ({
-      ...transport,
-      date: formatDateForDisplay(transport.date),
-      time: formatTimeForDisplay(transport.time)
-    }));
-    
-    res.json(formattedTransports);
+    // Il campo time è già una stringa, non serve formattazione
+    res.json(result.recordset);
   } catch (error) {
     console.error('Error fetching transports:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -719,14 +688,13 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
     const id = generateId();
     const pool = await poolPromise;
     
-    // Format time for SQL Server
-    const formattedTime = formatTimeForSQL(time);
+    // Valida e formatta l'orario
+    const formattedTime = validateAndFormatTime(time);
     if (!formattedTime) {
-      console.error('Invalid time format received:', time);
-      return res.status(400).json({ error: 'Invalid time format. Please use HH:MM format.' });
+      return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
     
-    console.log('Creating transport with:', { date, time, formattedTime, userId, driverId, destinationId });
+    console.log('Creating transport with time:', formattedTime);
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -742,15 +710,7 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    // Format the response data
-    const transport = result.recordset[0];
-    const formattedTransport = {
-      ...transport,
-      date: formatDateForDisplay(transport.date),
-      time: formatTimeForDisplay(transport.time)
-    };
-    
-    res.status(201).json(formattedTransport);
+    res.status(201).json(result.recordset[0]);
   } catch (error) {
     console.error('Error creating transport:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -763,14 +723,13 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
     const { date, time, userId, driverId, destinationId, notes } = req.body;
     const pool = await poolPromise;
     
-    // Format time for SQL Server
-    const formattedTime = formatTimeForSQL(time);
+    // Valida e formatta l'orario
+    const formattedTime = validateAndFormatTime(time);
     if (!formattedTime) {
-      console.error('Invalid time format received:', time);
-      return res.status(400).json({ error: 'Invalid time format. Please use HH:MM format.' });
+      return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
     
-    console.log('Updating transport with:', { date, time, formattedTime, userId, driverId, destinationId });
+    console.log('Updating transport with time:', formattedTime);
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -786,15 +745,7 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
-    // Format the response data
-    const transport = result.recordset[0];
-    const formattedTransport = {
-      ...transport,
-      date: formatDateForDisplay(transport.date),
-      time: formatTimeForDisplay(transport.time)
-    };
-    
-    res.json(formattedTransport);
+    res.json(result.recordset[0]);
   } catch (error) {
     console.error('Error updating transport:', error);
     res.status(500).json({ error: 'Internal server error' });

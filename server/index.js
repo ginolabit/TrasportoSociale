@@ -371,6 +371,60 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
   res.json(req.user);
 });
 
+// Change password endpoint
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    const pool = await poolPromise;
+    
+    // Get current user with password hash
+    const userResult = await pool.request()
+      .input('id', sql.NVarChar, userId)
+      .query('SELECT passwordHash FROM AuthUsers WHERE id = @id');
+    
+    if (userResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = userResult.recordset[0];
+    
+    // Verify current password
+    const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValidPassword) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    // Check if new password is different from current
+    const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
+    if (isSamePassword) {
+      return res.status(400).json({ error: 'New password must be different from current password' });
+    }
+
+    // Hash new password and update
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    
+    await pool.request()
+      .input('id', sql.NVarChar, userId)
+      .input('passwordHash', sql.NVarChar, newPasswordHash)
+      .query('UPDATE AuthUsers SET passwordHash = @passwordHash WHERE id = @id');
+    
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/api/auth/access-requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const pool = await poolPromise;
@@ -459,6 +513,11 @@ app.put('/api/auth/users/:id/role', authenticateToken, requireAdmin, async (req,
       return res.status(400).json({ error: 'Invalid role' });
     }
 
+    // Prevent self-modification
+    if (id === req.user.id) {
+      return res.status(400).json({ error: 'Cannot modify your own role' });
+    }
+
     const pool = await poolPromise;
     
     await pool.request()
@@ -476,6 +535,12 @@ app.put('/api/auth/users/:id/role', authenticateToken, requireAdmin, async (req,
 app.delete('/api/auth/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Prevent self-deletion
+    if (id === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+
     const pool = await poolPromise;
     
     await pool.request()

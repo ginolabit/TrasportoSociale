@@ -128,7 +128,7 @@ const initializeSchema = async (pool) => {
       CREATE TABLE Transports (
         id NVARCHAR(50) PRIMARY KEY,
         date DATE NOT NULL,
-        time TIME NOT NULL,
+        time NVARCHAR(8) NOT NULL,
         userId NVARCHAR(50) NOT NULL,
         driverId NVARCHAR(50) NOT NULL,
         destinationId NVARCHAR(50) NOT NULL,
@@ -169,22 +169,39 @@ const initializeSchema = async (pool) => {
 // Helper function to generate ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// Helper function to format time for SQL Server - SEMPLIFICATO
+// Helper function to format time for SQL Server - CORRETTO
 const formatTimeForSQL = (timeString) => {
   if (!timeString) return null;
   
   try {
-    // Rimuovi spazi
-    timeString = timeString.trim();
+    // Rimuovi spazi e converti in stringa
+    const cleanTime = timeString.toString().trim();
     
-    // Se è già nel formato HH:MM:SS, va bene
-    if (timeString.match(/^\d{1,2}:\d{2}:\d{2}$/)) {
-      return timeString;
+    // Verifica formato HH:MM o H:MM
+    const timeRegex = /^(\d{1,2}):(\d{2})$/;
+    const match = cleanTime.match(timeRegex);
+    
+    if (match) {
+      const hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      
+      // Valida ore e minuti
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      }
     }
     
-    // Se è nel formato HH:MM, aggiungi :00
-    if (timeString.match(/^\d{1,2}:\d{2}$/)) {
-      return timeString + ':00';
+    // Se è già nel formato HH:MM:SS, prendi solo HH:MM
+    const timeWithSecondsRegex = /^(\d{1,2}):(\d{2}):(\d{2})$/;
+    const matchWithSeconds = cleanTime.match(timeWithSecondsRegex);
+    
+    if (matchWithSeconds) {
+      const hours = parseInt(matchWithSeconds[1], 10);
+      const minutes = parseInt(matchWithSeconds[2], 10);
+      
+      if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      }
     }
     
     console.error('Invalid time format:', timeString);
@@ -195,24 +212,34 @@ const formatTimeForSQL = (timeString) => {
   }
 };
 
-// Helper function to format time for display - SEMPLIFICATO
+// Helper function to format time for display - CORRETTO
 const formatTimeForDisplay = (timeValue) => {
   if (!timeValue) return '';
   
   try {
     // Converti tutto in stringa
-    const timeStr = timeValue.toString();
+    const timeStr = timeValue.toString().trim();
+    
+    // Se è già nel formato corretto HH:MM, restituiscilo
+    if (timeStr.match(/^\d{2}:\d{2}$/)) {
+      return timeStr;
+    }
     
     // Se contiene i due punti, prendi solo HH:MM
     if (timeStr.includes(':')) {
       const parts = timeStr.split(':');
       if (parts.length >= 2) {
-        const hours = parts[0].padStart(2, '0');
-        const minutes = parts[1].padStart(2, '0');
-        return `${hours}:${minutes}`;
+        const hours = parseInt(parts[0], 10);
+        const minutes = parseInt(parts[1], 10);
+        
+        // Verifica che siano numeri validi
+        if (!isNaN(hours) && !isNaN(minutes)) {
+          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        }
       }
     }
     
+    // Se non riesce a parsare, restituisci la stringa originale
     return timeStr;
   } catch (error) {
     console.error('Error formatting time for display:', error);
@@ -704,7 +731,7 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('date', sql.Date, date)
-      .input('time', sql.VarChar, formattedTime) // Usa VarChar invece di Time per evitare problemi
+      .input('time', sql.NVarChar, formattedTime)
       .input('userId', sql.NVarChar, userId)
       .input('driverId', sql.NVarChar, driverId)
       .input('destinationId', sql.NVarChar, destinationId)
@@ -748,7 +775,7 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('date', sql.Date, date)
-      .input('time', sql.VarChar, formattedTime) // Usa VarChar invece di Time per evitare problemi
+      .input('time', sql.NVarChar, formattedTime)
       .input('userId', sql.NVarChar, userId)
       .input('driverId', sql.NVarChar, driverId)
       .input('destinationId', sql.NVarChar, destinationId)

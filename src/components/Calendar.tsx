@@ -124,26 +124,36 @@ export default function Calendar({
     setDraggedTransport(null);
   };
 
-  // Funzione per formattare l'ora senza conversioni di timezone - SEMPLIFICATA
+  // Funzione per formattare l'ora - SEMPLIFICATA E CORRETTA
   const formatDisplayTime = (timeString: string) => {
     if (!timeString) return '';
     
-    // Se l'ora è già nel formato HH:MM, restituiscila così com'è
-    if (timeString.match(/^\d{1,2}:\d{2}$/)) {
+    try {
+      // Se è già nel formato HH:MM, restituiscilo così com'è
+      if (timeString.match(/^\d{2}:\d{2}$/)) {
+        return timeString;
+      }
+      
+      // Se contiene i due punti, prendi solo HH:MM
+      if (timeString.includes(':')) {
+        const parts = timeString.split(':');
+        if (parts.length >= 2) {
+          const hours = parseInt(parts[0], 10);
+          const minutes = parseInt(parts[1], 10);
+          
+          // Verifica che siano numeri validi
+          if (!isNaN(hours) && !isNaN(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+          }
+        }
+      }
+      
+      // Se non riesce a parsare, restituisci la stringa originale
+      return timeString;
+    } catch (error) {
+      console.error('Error formatting time:', error);
       return timeString;
     }
-    
-    // Se l'ora include i secondi, rimuovili
-    if (timeString.includes(':')) {
-      const parts = timeString.split(':');
-      if (parts.length >= 2) {
-        const hours = parseInt(parts[0], 10).toString().padStart(2, '0');
-        const minutes = parseInt(parts[1], 10).toString().padStart(2, '0');
-        return `${hours}:${minutes}`;
-      }
-    }
-    
-    return timeString;
   };
 
   // --- VISTA MESE ---

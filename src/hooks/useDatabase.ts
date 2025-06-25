@@ -41,6 +41,8 @@ export function useDatabase() {
         transportsApi.getAll(),
       ]);
 
+      console.log('Loaded transports:', transportsData); // Debug log
+
       setUsers(usersData);
       setDrivers(driversData);
       setDestinations(destinationsData);
@@ -158,13 +160,23 @@ export function useDatabase() {
     }
   };
 
-  // Transport operations
+  // Transport operations - FIXED
   const addTransport = async (transportData: Omit<Transport, 'id' | 'createdAt'>) => {
     try {
+      console.log('Adding transport:', transportData); // Debug log
       const newTransport = await transportsApi.create(transportData);
-      setTransports(prev => [newTransport, ...prev]);
+      console.log('Transport created:', newTransport); // Debug log
+      
+      // AGGIORNA IMMEDIATAMENTE lo stato locale
+      setTransports(prev => {
+        const updated = [newTransport, ...prev];
+        console.log('Updated transports state:', updated); // Debug log
+        return updated;
+      });
+      
       return newTransport;
     } catch (error) {
+      console.error('Error adding transport:', error);
       setError(error instanceof Error ? error.message : 'Failed to add transport');
       throw error;
     }
@@ -172,10 +184,20 @@ export function useDatabase() {
 
   const updateTransport = async (id: string, transportData: Omit<Transport, 'id' | 'createdAt'>) => {
     try {
+      console.log('Updating transport:', id, transportData); // Debug log
       const updatedTransport = await transportsApi.update(id, transportData);
-      setTransports(prev => prev.map(transport => transport.id === id ? updatedTransport : transport));
+      console.log('Transport updated:', updatedTransport); // Debug log
+      
+      // AGGIORNA IMMEDIATAMENTE lo stato locale
+      setTransports(prev => {
+        const updated = prev.map(transport => transport.id === id ? updatedTransport : transport);
+        console.log('Updated transports state:', updated); // Debug log
+        return updated;
+      });
+      
       return updatedTransport;
     } catch (error) {
+      console.error('Error updating transport:', error);
       setError(error instanceof Error ? error.message : 'Failed to update transport');
       throw error;
     }
@@ -183,9 +205,17 @@ export function useDatabase() {
 
   const deleteTransport = async (id: string) => {
     try {
+      console.log('Deleting transport:', id); // Debug log
       await transportsApi.delete(id);
-      setTransports(prev => prev.filter(transport => transport.id !== id));
+      
+      // AGGIORNA IMMEDIATAMENTE lo stato locale
+      setTransports(prev => {
+        const updated = prev.filter(transport => transport.id !== id);
+        console.log('Updated transports state after delete:', updated); // Debug log
+        return updated;
+      });
     } catch (error) {
+      console.error('Error deleting transport:', error);
       setError(error instanceof Error ? error.message : 'Failed to delete transport');
       throw error;
     }

@@ -253,13 +253,16 @@ export const destinationsApi = {
   },
 };
 
-// Transports API
+// Transports API - ENHANCED WITH BETTER LOGGING
 export const transportsApi = {
   getAll: async (): Promise<Transport[]> => {
     try {
+      console.log('Fetching all transports...'); // Debug log
       const response = await api.get('/transports');
+      console.log('Transports fetched:', response.data); // Debug log
       return response.data;
     } catch (error) {
+      console.error('Error fetching transports:', error); // Debug log
       handleApiError(error);
       return [];
     }
@@ -267,9 +270,12 @@ export const transportsApi = {
 
   create: async (transportData: Omit<Transport, 'id' | 'createdAt'>): Promise<Transport> => {
     try {
+      console.log('Creating transport with data:', transportData); // Debug log
       const response = await api.post('/transports', transportData);
+      console.log('Transport created successfully:', response.data); // Debug log
       return response.data;
     } catch (error) {
+      console.error('Error creating transport:', error); // Debug log
       handleApiError(error);
       throw error;
     }
@@ -277,9 +283,12 @@ export const transportsApi = {
 
   update: async (id: string, transportData: Omit<Transport, 'id' | 'createdAt'>): Promise<Transport> => {
     try {
+      console.log('Updating transport:', id, 'with data:', transportData); // Debug log
       const response = await api.put(`/transports/${id}`, transportData);
+      console.log('Transport updated successfully:', response.data); // Debug log
       return response.data;
     } catch (error) {
+      console.error('Error updating transport:', error); // Debug log
       handleApiError(error);
       throw error;
     }
@@ -287,8 +296,11 @@ export const transportsApi = {
 
   delete: async (id: string): Promise<void> => {
     try {
+      console.log('Deleting transport:', id); // Debug log
       await api.delete(`/transports/${id}`);
+      console.log('Transport deleted successfully'); // Debug log
     } catch (error) {
+      console.error('Error deleting transport:', error); // Debug log
       handleApiError(error);
       throw error;
     }

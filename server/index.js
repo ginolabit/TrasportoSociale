@@ -668,11 +668,15 @@ app.delete('/api/destinations/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Transports endpoints
+// Transports endpoints - ENHANCED WITH BETTER LOGGING
 app.get('/api/transports', authenticateToken, async (req, res) => {
   try {
+    console.log('Fetching transports from database...'); // Debug log
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
+    
+    console.log(`Found ${result.recordset.length} transports in database`); // Debug log
+    console.log('Sample transport data:', result.recordset[0]); // Debug log
     
     // Il campo time è già una stringa, non serve formattazione
     res.json(result.recordset);
@@ -688,13 +692,16 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
     const id = generateId();
     const pool = await poolPromise;
     
+    console.log('Received transport data:', { date, time, userId, driverId, destinationId, notes }); // Debug log
+    
     // Valida e formatta l'orario
     const formattedTime = validateAndFormatTime(time);
     if (!formattedTime) {
+      console.error('Time validation failed for:', time); // Debug log
       return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
     
-    console.log('Creating transport with time:', formattedTime);
+    console.log('Creating transport with validated time:', formattedTime); // Debug log
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -710,6 +717,7 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
+    console.log('Transport created successfully:', result.recordset[0]); // Debug log
     res.status(201).json(result.recordset[0]);
   } catch (error) {
     console.error('Error creating transport:', error);
@@ -723,13 +731,16 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
     const { date, time, userId, driverId, destinationId, notes } = req.body;
     const pool = await poolPromise;
     
+    console.log('Updating transport:', id, 'with data:', { date, time, userId, driverId, destinationId, notes }); // Debug log
+    
     // Valida e formatta l'orario
     const formattedTime = validateAndFormatTime(time);
     if (!formattedTime) {
+      console.error('Time validation failed for:', time); // Debug log
       return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
     
-    console.log('Updating transport with time:', formattedTime);
+    console.log('Updating transport with validated time:', formattedTime); // Debug log
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -745,6 +756,7 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Transports WHERE id = @id');
     
+    console.log('Transport updated successfully:', result.recordset[0]); // Debug log
     res.json(result.recordset[0]);
   } catch (error) {
     console.error('Error updating transport:', error);
@@ -757,10 +769,13 @@ app.delete('/api/transports/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const pool = await poolPromise;
     
+    console.log('Deleting transport:', id); // Debug log
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .query('DELETE FROM Transports WHERE id = @id');
     
+    console.log('Transport deleted successfully'); // Debug log
     res.status(204).send();
   } catch (error) {
     console.error('Error deleting transport:', error);

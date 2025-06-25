@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogIn, UserPlus, Eye, EyeOff } from 'lucide-react';
+import { LogIn, UserPlus, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (username: string, password: string) => Promise<boolean>;
@@ -24,48 +24,57 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
     password: '',
     confirmPassword: ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (isLogin) {
-      if (!formData.username || !formData.password) {
-        alert('Inserisci username e password');
-        return;
-      }
-      await onLogin(formData.username, formData.password);
-    } else {
-      if (!formData.username || !formData.email || !formData.fullName || !formData.password) {
-        alert('Compila tutti i campi');
-        return;
-      }
-      if (formData.password !== formData.confirmPassword) {
-        alert('Le password non coincidono');
-        return;
-      }
-      if (formData.password.length < 6) {
-        alert('La password deve essere di almeno 6 caratteri');
-        return;
-      }
-      
-      const success = await onRegister({
-        username: formData.username,
-        email: formData.email,
-        fullName: formData.fullName,
-        password: formData.password
-      });
-      
-      if (success) {
-        alert('Registrazione completata! Attendi l\'approvazione da parte di un amministratore.');
-        setIsLogin(true);
-        setFormData({
-          username: '',
-          email: '',
-          fullName: '',
-          password: '',
-          confirmPassword: ''
+    if (isSubmitting) return; // Prevent double submission
+    
+    setIsSubmitting(true);
+    
+    try {
+      if (isLogin) {
+        if (!formData.username || !formData.password) {
+          alert('Inserisci username e password');
+          return;
+        }
+        await onLogin(formData.username, formData.password);
+      } else {
+        if (!formData.username || !formData.email || !formData.fullName || !formData.password) {
+          alert('Compila tutti i campi');
+          return;
+        }
+        if (formData.password !== formData.confirmPassword) {
+          alert('Le password non coincidono');
+          return;
+        }
+        if (formData.password.length < 6) {
+          alert('La password deve essere di almeno 6 caratteri');
+          return;
+        }
+        
+        const success = await onRegister({
+          username: formData.username,
+          email: formData.email,
+          fullName: formData.fullName,
+          password: formData.password
         });
+        
+        if (success) {
+          alert('Registrazione completata! Attendi l\'approvazione da parte di un amministratore.');
+          setIsLogin(true);
+          setFormData({
+            username: '',
+            email: '',
+            fullName: '',
+            password: '',
+            confirmPassword: ''
+          });
+        }
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -97,10 +106,28 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">
-            {error}
+          <div className={`mb-4 p-3 rounded-lg border flex items-center gap-2 ${
+            darkMode 
+              ? 'bg-red-900/50 border-red-700 text-red-200' 
+              : 'bg-red-50 border-red-200 text-red-800'
+          }`}>
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <span className="text-sm">{error}</span>
           </div>
         )}
+
+        {/* Credenziali di default per test */}
+        <div className={`mb-4 p-3 rounded-lg border ${
+          darkMode 
+            ? 'bg-blue-900/50 border-blue-700 text-blue-200' 
+            : 'bg-blue-50 border-blue-200 text-blue-800'
+        }`}>
+          <div className="text-sm">
+            <strong>Credenziali di test:</strong><br />
+            Username: <code>admin</code><br />
+            Password: <code>admin123</code>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -119,6 +146,7 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
                   : 'bg-white border-gray-300 text-gray-900'
               }`}
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -140,6 +168,7 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
                       : 'bg-white border-gray-300 text-gray-900'
                   }`}
                   required
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -159,6 +188,7 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
                       : 'bg-white border-gray-300 text-gray-900'
                   }`}
                   required
+                  disabled={isSubmitting}
                 />
               </div>
             </>
@@ -181,6 +211,7 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
                     : 'bg-white border-gray-300 text-gray-900'
                 }`}
                 required
+                disabled={isSubmitting}
               />
               <button
                 type="button"
@@ -188,6 +219,7 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
                 className={`absolute right-3 top-2.5 ${
                   darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'
                 }`}
+                disabled={isSubmitting}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -211,16 +243,17 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
                     : 'bg-white border-gray-300 text-gray-900'
                 }`}
                 required
+                disabled={isSubmitting}
               />
             </div>
           )}
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            disabled={loading || isSubmitting}
+            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? (
+            {(loading || isSubmitting) ? (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
             ) : (
               <>
@@ -234,9 +267,10 @@ export default function Login({ onLogin, onRegister, darkMode, loading, error }:
         <div className="mt-6 text-center">
           <button
             onClick={toggleMode}
+            disabled={isSubmitting}
             className={`text-sm ${
               darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-500'
-            }`}
+            } disabled:opacity-50`}
           >
             {isLogin 
               ? 'Non hai un account? Registrati' 

@@ -59,19 +59,25 @@ function App() {
 
   // Show loading spinner while checking authentication
   if (authLoading) {
-    return <LoadingSpinner darkMode={darkMode} message="Verifica autenticazione..." />;
+    return (
+      <div className={darkMode ? 'dark' : ''}>
+        <LoadingSpinner darkMode={darkMode} message="Verifica autenticazione..." />
+      </div>
+    );
   }
 
   // Show login page if not authenticated
   if (!currentUser) {
     return (
-      <Login
-        onLogin={login}
-        onRegister={register}
-        darkMode={darkMode}
-        loading={false}
-        error={authError}
-      />
+      <div className={darkMode ? 'dark' : ''}>
+        <Login
+          onLogin={login}
+          onRegister={register}
+          darkMode={darkMode}
+          loading={authLoading}
+          error={authError}
+        />
+      </div>
     );
   }
 

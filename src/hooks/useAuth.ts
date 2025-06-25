@@ -18,7 +18,9 @@ export function useAuth() {
           setCurrentUser(user);
         }
       } catch (error) {
+        console.error('Token verification failed:', error);
         localStorage.removeItem('auth_token');
+        setCurrentUser(null);
       } finally {
         setLoading(false);
       }
@@ -46,6 +48,8 @@ export function useAuth() {
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
       setError(null);
+      setLoading(true);
+      
       const response = await authApi.login(username, password);
       
       if (response.user && response.token) {
@@ -57,8 +61,11 @@ export function useAuth() {
         return false;
       }
     } catch (error: any) {
+      console.error('Login error:', error);
       setError(error.message || 'Errore durante il login');
       return false;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -70,11 +77,16 @@ export function useAuth() {
   }): Promise<boolean> => {
     try {
       setError(null);
+      setLoading(true);
+      
       await authApi.register(userData);
       return true;
     } catch (error: any) {
+      console.error('Registration error:', error);
       setError(error.message || 'Errore durante la registrazione');
       return false;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -82,6 +94,7 @@ export function useAuth() {
     localStorage.removeItem('auth_token');
     setCurrentUser(null);
     setAccessRequests([]);
+    setError(null);
   };
 
   const approveRequest = async (id: string) => {

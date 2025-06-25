@@ -8,6 +8,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // 10 second timeout
 });
 
 // Add auth token to requests
@@ -19,14 +20,44 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Handle response errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Only remove token and redirect if we're not already on login page
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/' && currentPath !== '/login') {
+        localStorage.removeItem('auth_token');
+        // Don't force reload, let the app handle the state change
+        console.log('Authentication expired, redirecting to login');
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Error handler
 const handleApiError = (error: any) => {
   console.error('API Error:', error);
-  if (error.response?.status === 401) {
-    localStorage.removeItem('auth_token');
-    window.location.reload();
+  
+  if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK') {
+    throw new Error('Impossibile connettersi al server. Verifica che il server sia in esecuzione.');
   }
-  throw new Error(error.response?.data?.error || 'An error occurred');
+  
+  if (error.response?.status === 401) {
+    throw new Error('Credenziali non valide o sessione scaduta');
+  }
+  
+  if (error.response?.status === 403) {
+    throw new Error('Accesso negato');
+  }
+  
+  if (error.response?.status >= 500) {
+    throw new Error('Errore del server. Riprova più tardi.');
+  }
+  
+  throw new Error(error.response?.data?.error || error.message || 'Si è verificato un errore');
 };
 
 // Auth API
@@ -270,6 +301,7 @@ export const healthCheck = async (): Promise<boolean> => {
     const response = await api.get('/health');
     return response.status === 200;
   } catch (error) {
+    console.error('Health check failed:', error);
     return false;
   }
 };

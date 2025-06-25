@@ -63,11 +63,11 @@ function App() {
 
   // Auto-refresh dei dati quando l'utente si autentica
   useEffect(() => {
-    if (currentUser && !authLoading) {
+    if (currentUser && !authLoading && !dataLoading) {
       console.log('Utente autenticato, caricamento automatico dei dati...');
       loadAllData();
     }
-  }, [currentUser, authLoading, loadAllData]);
+  }, [currentUser, authLoading]); // Rimosso loadAllData dalle dipendenze per evitare loop
 
   // Show loading spinner while checking authentication
   if (authLoading) {

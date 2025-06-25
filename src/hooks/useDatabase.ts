@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { User, Driver, Destination, Transport } from '../types';
 import { usersApi, driversApi, destinationsApi, transportsApi, healthCheck } from '../services/api';
 
@@ -7,12 +7,12 @@ export function useDatabase() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [transports, setTransports] = useState<Transport[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
 
   // Check database connection
-  const checkConnection = async () => {
+  const checkConnection = useCallback(async () => {
     try {
       const online = await healthCheck();
       setIsOnline(online);
@@ -21,10 +21,10 @@ export function useDatabase() {
       setIsOnline(false);
       return false;
     }
-  };
+  }, []);
 
-  // Load all data
-  const loadAllData = async () => {
+  // Load all data - memoized to prevent infinite loops
+  const loadAllData = useCallback(async () => {
     setLoading(true);
     setError(null);
     
@@ -51,7 +51,7 @@ export function useDatabase() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [checkConnection]);
 
   // User operations
   const addUser = async (userData: Omit<User, 'id' | 'createdAt'>) => {

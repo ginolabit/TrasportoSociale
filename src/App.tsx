@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDarkMode } from './hooks/useDarkMode';
 import { useDatabase } from './hooks/useDatabase';
 import { useAuth } from './hooks/useAuth';
@@ -61,6 +61,14 @@ function App() {
     clearError: clearDataError,
   } = useDatabase();
 
+  // Auto-refresh dei dati quando l'utente si autentica
+  useEffect(() => {
+    if (currentUser && !authLoading) {
+      console.log('Utente autenticato, caricamento automatico dei dati...');
+      loadAllData();
+    }
+  }, [currentUser, authLoading, loadAllData]);
+
   // Show loading spinner while checking authentication
   if (authLoading) {
     return (
@@ -87,7 +95,7 @@ function App() {
 
   const renderCurrentView = () => {
     if (dataLoading) {
-      return <LoadingSpinner darkMode={darkMode} />;
+      return <LoadingSpinner darkMode={darkMode} message="Caricamento dati..." />;
     }
 
     switch (currentView) {

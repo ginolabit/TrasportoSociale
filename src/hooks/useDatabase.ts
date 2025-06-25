@@ -191,11 +191,6 @@ export function useDatabase() {
   // Clear error
   const clearError = () => setError(null);
 
-  // Initial data load
-  useEffect(() => {
-    loadAllData();
-  }, []);
-
   return {
     // Data
     users,

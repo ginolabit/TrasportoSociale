@@ -4,27 +4,124 @@ import dotenv from 'dotenv';
 import sql from 'mssql';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import compression from 'compression';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://ahrw.siatec.it';
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
 
-// Database configuration
+// Compression middleware
+app.use(compression());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 login attempts per windowMs
+  message: {
+    error: 'Too many login attempts from this IP, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', limiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
+// CORS configuration for production
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'https://ahrw.siatec.it',
+      'https://www.ahrw.siatec.it'
+    ];
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
+
+// Body parsing middleware with size limits
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files in production
+if (NODE_ENV === 'production') {
+  app.use('/TrasportoSociale', express.static(path.join(__dirname, '../dist')));
+}
+
+// Database configuration with enhanced security
 const dbConfig = {
-  user: process.env.DB_USER || 'sa',
-  password: process.env.DB_PASSWORD || 'YourPassword123!',
-  server: process.env.DB_SERVER || 'localhost',
-  database: process.env.DB_NAME || 'TrasportoSociale',
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  server: process.env.DB_SERVER,
+  database: process.env.DB_NAME,
   options: {
-    encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: process.env.DB_TRUST_CERT === 'true' || true,
+    encrypt: true, // Always encrypt in production
+    trustServerCertificate: process.env.DB_TRUST_CERT === 'true',
     enableArithAbort: true,
+    requestTimeout: 30000,
+    connectionTimeout: 30000,
   },
   pool: {
     max: 10,
@@ -32,6 +129,22 @@ const dbConfig = {
     idleTimeoutMillis: 30000,
   },
 };
+
+// Validate required environment variables
+const requiredEnvVars = [
+  'DB_USER',
+  'DB_PASSWORD', 
+  'DB_SERVER',
+  'DB_NAME',
+  'JWT_SECRET'
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`Missing required environment variable: ${envVar}`);
+    process.exit(1);
+  }
+}
 
 // Database connection
 let poolPromise;
@@ -65,7 +178,11 @@ const initializeSchema = async (pool) => {
         passwordHash NVARCHAR(255) NOT NULL,
         role NVARCHAR(20) DEFAULT 'user',
         isApproved BIT DEFAULT 0,
-        createdAt DATETIME2 DEFAULT GETDATE()
+        lastLogin DATETIME2,
+        failedLoginAttempts INT DEFAULT 0,
+        lockedUntil DATETIME2,
+        createdAt DATETIME2 DEFAULT GETDATE(),
+        updatedAt DATETIME2 DEFAULT GETDATE()
       )
     `);
 
@@ -172,11 +289,28 @@ const initializeSchema = async (pool) => {
       END
     `);
 
+    // Create audit log table
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='AuditLog' AND xtype='U')
+      CREATE TABLE AuditLog (
+        id NVARCHAR(50) PRIMARY KEY,
+        userId NVARCHAR(50),
+        action NVARCHAR(100) NOT NULL,
+        tableName NVARCHAR(50),
+        recordId NVARCHAR(50),
+        oldValues NVARCHAR(MAX),
+        newValues NVARCHAR(MAX),
+        ipAddress NVARCHAR(45),
+        userAgent NVARCHAR(500),
+        timestamp DATETIME2 DEFAULT GETDATE()
+      )
+    `);
+
     // Create default admin user if no users exist
     const adminCheck = await pool.request().query('SELECT COUNT(*) as count FROM AuthUsers WHERE role = \'admin\'');
     if (adminCheck.recordset[0].count === 0) {
       const adminId = generateId();
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+      const hashedPassword = await bcrypt.hash('admin123', 12);
       
       await pool.request()
         .input('id', sql.NVarChar, adminId)
@@ -200,6 +334,30 @@ const initializeSchema = async (pool) => {
 
 // Helper function to generate ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
+
+// Helper function to log audit events
+const logAuditEvent = async (userId, action, tableName, recordId, oldValues, newValues, req) => {
+  try {
+    const pool = await poolPromise;
+    const auditId = generateId();
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const userAgent = req.get('User-Agent');
+    
+    await pool.request()
+      .input('id', sql.NVarChar, auditId)
+      .input('userId', sql.NVarChar, userId)
+      .input('action', sql.NVarChar, action)
+      .input('tableName', sql.NVarChar, tableName)
+      .input('recordId', sql.NVarChar, recordId)
+      .input('oldValues', sql.NVarChar, oldValues ? JSON.stringify(oldValues) : null)
+      .input('newValues', sql.NVarChar, newValues ? JSON.stringify(newValues) : null)
+      .input('ipAddress', sql.NVarChar, ipAddress)
+      .input('userAgent', sql.NVarChar, userAgent)
+      .query('INSERT INTO AuditLog (id, userId, action, tableName, recordId, oldValues, newValues, ipAddress, userAgent) VALUES (@id, @userId, @action, @tableName, @recordId, @oldValues, @newValues, @ipAddress, @userAgent)');
+  } catch (error) {
+    console.error('Error logging audit event:', error);
+  }
+};
 
 // Helper function to validate and format time
 const validateAndFormatTime = (timeInput) => {
@@ -245,7 +403,7 @@ const formatDateForOutput = (dateValue) => {
   }
 };
 
-// Auth middleware
+// Enhanced auth middleware with account lockout
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -259,13 +417,24 @@ const authenticateToken = async (req, res, next) => {
     const pool = await poolPromise;
     const result = await pool.request()
       .input('id', sql.NVarChar, decoded.userId)
-      .query('SELECT id, username, email, fullName, role, isApproved FROM AuthUsers WHERE id = @id AND isApproved = 1');
+      .query(`
+        SELECT id, username, email, fullName, role, isApproved, lockedUntil 
+        FROM AuthUsers 
+        WHERE id = @id AND isApproved = 1
+      `);
     
     if (result.recordset.length === 0) {
       return res.status(401).json({ error: 'Invalid token or user not approved' });
     }
     
-    req.user = result.recordset[0];
+    const user = result.recordset[0];
+    
+    // Check if account is locked
+    if (user.lockedUntil && new Date() < new Date(user.lockedUntil)) {
+      return res.status(423).json({ error: 'Account temporarily locked due to failed login attempts' });
+    }
+    
+    req.user = user;
     next();
   } catch (error) {
     return res.status(403).json({ error: 'Invalid token' });
@@ -280,6 +449,17 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// Input validation middleware
+const validateInput = (schema) => {
+  return (req, res, next) => {
+    const { error } = schema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+    next();
+  };
+};
+
 // Auth endpoints
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -289,8 +469,16 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    // Enhanced password validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({ 
+        error: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character' 
+      });
     }
 
     const pool = await poolPromise;
@@ -306,7 +494,7 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     const id = generateId();
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -315,6 +503,8 @@ app.post('/api/auth/register', async (req, res) => {
       .input('fullName', sql.NVarChar, fullName)
       .input('passwordHash', sql.NVarChar, hashedPassword)
       .query('INSERT INTO AccessRequests (id, username, email, fullName, passwordHash) VALUES (@id, @username, @email, @fullName, @passwordHash)');
+    
+    await logAuditEvent(null, 'REGISTER_REQUEST', 'AccessRequests', id, null, { username, email, fullName }, req);
     
     res.status(201).json({ message: 'Registration request submitted. Wait for admin approval.' });
   } catch (error) {
@@ -334,20 +524,49 @@ app.post('/api/auth/login', async (req, res) => {
     const pool = await poolPromise;
     const result = await pool.request()
       .input('username', sql.NVarChar, username)
-      .query('SELECT * FROM AuthUsers WHERE username = @username AND isApproved = 1');
+      .query(`
+        SELECT * FROM AuthUsers 
+        WHERE username = @username AND isApproved = 1
+      `);
     
     if (result.recordset.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials or account not approved' });
-    }
-
-    const user = result.recordset[0];
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
-    
-    if (!isValidPassword) {
+      await logAuditEvent(null, 'LOGIN_FAILED', 'AuthUsers', null, null, { username, reason: 'User not found' }, req);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
+    const user = result.recordset[0];
+    
+    // Check if account is locked
+    if (user.lockedUntil && new Date() < new Date(user.lockedUntil)) {
+      return res.status(423).json({ error: 'Account temporarily locked due to failed login attempts' });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    
+    if (!isValidPassword) {
+      // Increment failed login attempts
+      const failedAttempts = (user.failedLoginAttempts || 0) + 1;
+      const lockUntil = failedAttempts >= 5 ? new Date(Date.now() + 30 * 60 * 1000) : null; // Lock for 30 minutes after 5 failed attempts
+      
+      await pool.request()
+        .input('id', sql.NVarChar, user.id)
+        .input('failedAttempts', sql.Int, failedAttempts)
+        .input('lockUntil', sql.DateTime2, lockUntil)
+        .query('UPDATE AuthUsers SET failedLoginAttempts = @failedAttempts, lockedUntil = @lockUntil WHERE id = @id');
+      
+      await logAuditEvent(user.id, 'LOGIN_FAILED', 'AuthUsers', user.id, null, { reason: 'Invalid password', failedAttempts }, req);
+      
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Reset failed login attempts on successful login
+    await pool.request()
+      .input('id', sql.NVarChar, user.id)
+      .query('UPDATE AuthUsers SET failedLoginAttempts = 0, lockedUntil = NULL, lastLogin = GETDATE() WHERE id = @id');
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '8h' });
+    
+    await logAuditEvent(user.id, 'LOGIN_SUCCESS', 'AuthUsers', user.id, null, null, req);
     
     res.json({
       token,
@@ -381,8 +600,16 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Current password and new password are required' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    // Enhanced password validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/;
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({ 
+        error: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character' 
+      });
     }
 
     const pool = await poolPromise;
@@ -401,6 +628,7 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
     // Verify current password
     const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!isValidPassword) {
+      await logAuditEvent(userId, 'PASSWORD_CHANGE_FAILED', 'AuthUsers', userId, null, { reason: 'Invalid current password' }, req);
       return res.status(400).json({ error: 'Current password is incorrect' });
     }
 
@@ -411,12 +639,14 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
     }
 
     // Hash new password and update
-    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
     
     await pool.request()
       .input('id', sql.NVarChar, userId)
       .input('passwordHash', sql.NVarChar, newPasswordHash)
-      .query('UPDATE AuthUsers SET passwordHash = @passwordHash WHERE id = @id');
+      .query('UPDATE AuthUsers SET passwordHash = @passwordHash, updatedAt = GETDATE() WHERE id = @id');
+    
+    await logAuditEvent(userId, 'PASSWORD_CHANGED', 'AuthUsers', userId, null, null, req);
     
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -469,6 +699,8 @@ app.post('/api/auth/access-requests/:id/approve', authenticateToken, requireAdmi
       .input('id', sql.NVarChar, id)
       .query('UPDATE AccessRequests SET status = \'approved\' WHERE id = @id');
     
+    await logAuditEvent(req.user.id, 'ACCESS_REQUEST_APPROVED', 'AccessRequests', id, null, { approvedUserId: userId }, req);
+    
     res.json({ message: 'Request approved successfully' });
   } catch (error) {
     console.error('Error approving request:', error);
@@ -485,6 +717,8 @@ app.post('/api/auth/access-requests/:id/reject', authenticateToken, requireAdmin
       .input('id', sql.NVarChar, id)
       .query('UPDATE AccessRequests SET status = \'rejected\' WHERE id = @id');
     
+    await logAuditEvent(req.user.id, 'ACCESS_REQUEST_REJECTED', 'AccessRequests', id, null, null, req);
+    
     res.json({ message: 'Request rejected successfully' });
   } catch (error) {
     console.error('Error rejecting request:', error);
@@ -496,7 +730,7 @@ app.post('/api/auth/access-requests/:id/reject', authenticateToken, requireAdmin
 app.get('/api/auth/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const pool = await poolPromise;
-    const result = await pool.request().query('SELECT id, username, email, fullName, role, isApproved, createdAt FROM AuthUsers WHERE isApproved = 1 ORDER BY createdAt DESC');
+    const result = await pool.request().query('SELECT id, username, email, fullName, role, isApproved, lastLogin, createdAt FROM AuthUsers WHERE isApproved = 1 ORDER BY createdAt DESC');
     res.json(result.recordset);
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -520,10 +754,19 @@ app.put('/api/auth/users/:id/role', authenticateToken, requireAdmin, async (req,
 
     const pool = await poolPromise;
     
+    // Get old role for audit
+    const oldUserResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT role FROM AuthUsers WHERE id = @id');
+    
+    const oldRole = oldUserResult.recordset[0]?.role;
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('role', sql.NVarChar, role)
-      .query('UPDATE AuthUsers SET role = @role WHERE id = @id');
+      .query('UPDATE AuthUsers SET role = @role, updatedAt = GETDATE() WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'USER_ROLE_CHANGED', 'AuthUsers', id, { role: oldRole }, { role }, req);
     
     res.json({ message: 'User role updated successfully' });
   } catch (error) {
@@ -543,9 +786,18 @@ app.delete('/api/auth/users/:id', authenticateToken, requireAdmin, async (req, r
 
     const pool = await poolPromise;
     
+    // Get user data for audit before deletion
+    const userResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT username, email, fullName, role FROM AuthUsers WHERE id = @id');
+    
+    const userData = userResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .query('DELETE FROM AuthUsers WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'USER_DELETED', 'AuthUsers', id, userData, null, req);
     
     res.status(204).send();
   } catch (error) {
@@ -584,6 +836,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Users WHERE id = @id');
     
+    await logAuditEvent(req.user.id, 'USER_CREATED', 'Users', id, null, { name, phone, address, notes }, req);
+    
     res.status(201).json(result.recordset[0]);
   } catch (error) {
     console.error('Error creating user:', error);
@@ -597,6 +851,13 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     const { name, phone, address, notes } = req.body;
     const pool = await poolPromise;
     
+    // Get old data for audit
+    const oldDataResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Users WHERE id = @id');
+    
+    const oldData = oldDataResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('name', sql.NVarChar, name)
@@ -608,6 +869,8 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     const result = await pool.request()
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Users WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'USER_UPDATED', 'Users', id, oldData, { name, phone, address, notes }, req);
     
     res.json(result.recordset[0]);
   } catch (error) {
@@ -621,9 +884,18 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const pool = await poolPromise;
     
+    // Get user data for audit before deletion
+    const userResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Users WHERE id = @id');
+    
+    const userData = userResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .query('DELETE FROM Users WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'USER_DELETED', 'Users', id, userData, null, req);
     
     res.status(204).send();
   } catch (error) {
@@ -662,6 +934,8 @@ app.post('/api/drivers', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Drivers WHERE id = @id');
     
+    await logAuditEvent(req.user.id, 'DRIVER_CREATED', 'Drivers', id, null, { name, phone, licenseNumber, notes }, req);
+    
     res.status(201).json(result.recordset[0]);
   } catch (error) {
     console.error('Error creating driver:', error);
@@ -675,6 +949,13 @@ app.put('/api/drivers/:id', authenticateToken, async (req, res) => {
     const { name, phone, licenseNumber, notes } = req.body;
     const pool = await poolPromise;
     
+    // Get old data for audit
+    const oldDataResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Drivers WHERE id = @id');
+    
+    const oldData = oldDataResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('name', sql.NVarChar, name)
@@ -686,6 +967,8 @@ app.put('/api/drivers/:id', authenticateToken, async (req, res) => {
     const result = await pool.request()
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Drivers WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'DRIVER_UPDATED', 'Drivers', id, oldData, { name, phone, licenseNumber, notes }, req);
     
     res.json(result.recordset[0]);
   } catch (error) {
@@ -699,9 +982,18 @@ app.delete('/api/drivers/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const pool = await poolPromise;
     
+    // Get driver data for audit before deletion
+    const driverResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Drivers WHERE id = @id');
+    
+    const driverData = driverResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .query('DELETE FROM Drivers WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'DRIVER_DELETED', 'Drivers', id, driverData, null, req);
     
     res.status(204).send();
   } catch (error) {
@@ -740,6 +1032,8 @@ app.post('/api/destinations', authenticateToken, async (req, res) => {
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Destinations WHERE id = @id');
     
+    await logAuditEvent(req.user.id, 'DESTINATION_CREATED', 'Destinations', id, null, { name, address, cost, notes }, req);
+    
     res.status(201).json(result.recordset[0]);
   } catch (error) {
     console.error('Error creating destination:', error);
@@ -753,6 +1047,13 @@ app.put('/api/destinations/:id', authenticateToken, async (req, res) => {
     const { name, address, cost, notes } = req.body;
     const pool = await poolPromise;
     
+    // Get old data for audit
+    const oldDataResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Destinations WHERE id = @id');
+    
+    const oldData = oldDataResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('name', sql.NVarChar, name)
@@ -764,6 +1065,8 @@ app.put('/api/destinations/:id', authenticateToken, async (req, res) => {
     const result = await pool.request()
       .input('id', sql.NVarChar, id)
       .query('SELECT * FROM Destinations WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'DESTINATION_UPDATED', 'Destinations', id, oldData, { name, address, cost, notes }, req);
     
     res.json(result.recordset[0]);
   } catch (error) {
@@ -777,9 +1080,18 @@ app.delete('/api/destinations/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const pool = await poolPromise;
     
+    // Get destination data for audit before deletion
+    const destinationResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Destinations WHERE id = @id');
+    
+    const destinationData = destinationResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .query('DELETE FROM Destinations WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'DESTINATION_DELETED', 'Destinations', id, destinationData, null, req);
     
     res.status(204).send();
   } catch (error) {
@@ -838,6 +1150,8 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
       date: formatDateForOutput(transport.date)
     };
     
+    await logAuditEvent(req.user.id, 'TRANSPORT_CREATED', 'Transports', id, null, { date, time: formattedTime, userId, driverId, destinationId, notes }, req);
+    
     res.status(201).json(formattedTransport);
   } catch (error) {
     console.error('Error creating transport:', error);
@@ -855,6 +1169,13 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
     if (!formattedTime) {
       return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
+    
+    // Get old data for audit
+    const oldDataResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Transports WHERE id = @id');
+    
+    const oldData = oldDataResult.recordset[0];
     
     await pool.request()
       .input('id', sql.NVarChar, id)
@@ -876,6 +1197,8 @@ app.put('/api/transports/:id', authenticateToken, async (req, res) => {
       date: formatDateForOutput(transport.date)
     };
     
+    await logAuditEvent(req.user.id, 'TRANSPORT_UPDATED', 'Transports', id, oldData, { date, time: formattedTime, userId, driverId, destinationId, notes }, req);
+    
     res.json(formattedTransport);
   } catch (error) {
     console.error('Error updating transport:', error);
@@ -888,9 +1211,18 @@ app.delete('/api/transports/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const pool = await poolPromise;
     
+    // Get transport data for audit before deletion
+    const transportResult = await pool.request()
+      .input('id', sql.NVarChar, id)
+      .query('SELECT * FROM Transports WHERE id = @id');
+    
+    const transportData = transportResult.recordset[0];
+    
     await pool.request()
       .input('id', sql.NVarChar, id)
       .query('DELETE FROM Transports WHERE id = @id');
+    
+    await logAuditEvent(req.user.id, 'TRANSPORT_DELETED', 'Transports', id, transportData, null, req);
     
     res.status(204).send();
   } catch (error) {
@@ -904,11 +1236,35 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Serve React app in production
+if (NODE_ENV === 'production') {
+  app.get('/TrasportoSociale/*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  });
+}
+
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error('Global error handler:', error);
+  
+  if (error.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: 'CORS policy violation' });
+  }
+  
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
 // Initialize database and start server
 initializeDatabase()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      console.log(`Server running on port ${PORT} in ${NODE_ENV} mode`);
+      console.log(`Frontend URL: ${FRONTEND_URL}`);
     });
   })
   .catch((error) => {

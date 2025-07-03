@@ -1,14 +1,34 @@
 import axios from 'axios';
 import { User, Driver, Destination, Transport, AuthUser, AccessRequest } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Determine API base URL based on environment
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    // Client-side
+    const { protocol, hostname, port } = window.location;
+    
+    // In production, use the same origin
+    if (hostname === 'ahrw.siatec.it' || hostname.includes('siatec.it')) {
+      return `${protocol}//${hostname}/api`;
+    }
+    
+    // In development, use the dev server
+    return 'http://localhost:3001/api';
+  }
+  
+  // Server-side fallback
+  return process.env.VITE_API_URL || 'http://localhost:3001/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 30000,
+  withCredentials: true, // Important for CORS with credentials
 });
 
 // Add auth token to requests
@@ -28,6 +48,8 @@ api.interceptors.response.use(
       const currentPath = window.location.pathname;
       if (currentPath !== '/' && currentPath !== '/login') {
         localStorage.removeItem('auth_token');
+        // Optionally redirect to login
+        // window.location.href = '/TrasportoSociale';
       }
     }
     return Promise.reject(error);
@@ -48,6 +70,14 @@ const handleApiError = (error: any) => {
   
   if (error.response?.status === 403) {
     throw new Error('Accesso negato');
+  }
+  
+  if (error.response?.status === 423) {
+    throw new Error('Account temporaneamente bloccato per troppi tentativi di accesso falliti');
+  }
+  
+  if (error.response?.status === 429) {
+    throw new Error('Troppi tentativi. Riprova più tardi.');
   }
   
   if (error.response?.status >= 500) {

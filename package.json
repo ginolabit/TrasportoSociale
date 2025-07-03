@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "start": "concurrently \"npm run server\" \"npm run dev\""
+    "start": "concurrently \"npm run server\" \"npm run dev\"",
+    "start:prod": "NODE_ENV=production node server/index.js"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -22,7 +23,10 @@
     "concurrently": "^8.2.2",
     "bcrypt": "^5.1.1",
     "jsonwebtoken": "^9.0.2",
-    "axios": "^1.6.2"
+    "axios": "^1.6.2",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "compression": "^1.7.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
@@ -39,6 +43,7 @@
     "typescript": "~5.6.2",
     "vite": "^5.4.2",
     "@types/bcrypt": "^5.0.2",
-    "@types/jsonwebtoken": "^9.0.5"
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/compression": "^1.7.5"
   }
 }

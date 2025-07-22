@@ -159,7 +159,7 @@ export default function Dashboard({
           ) : (
             <div className="space-y-4">
               {todayTransports
-                .sort((a, b) => a.time.localeCompare(b.time))
+                .sort((a, b) => a.startTime.localeCompare(b.startTime))
                 .map((transport) => {
                   const user = users.find(u => u.id === transport.userId);
                   const driver = drivers.find(d => d.id === transport.driverId);
@@ -171,7 +171,10 @@ export default function Dashboard({
                     }`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-4 flex-wrap">
-                          <span className="font-bold text-blue-600 text-lg">{transport.time}</span>
+                          <span className="font-bold text-blue-600 text-lg">
+                            {transport.startTime}
+                            {transport.endTime && ` - ${transport.endTime}`}
+                          </span>
                           <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                             {user?.name || 'Utente sconosciuto'}
                           </span>
@@ -183,6 +186,11 @@ export default function Dashboard({
                           <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                             {driver?.name || 'Autista sconosciuto'}
                           </span>
+                          {transport.isRecurring && (
+                            <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                              Ricorrente
+                            </span>
+                          )}
                         </div>
                         {transport.notes && (
                           <p className={`text-sm mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>

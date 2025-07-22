@@ -105,10 +105,14 @@ export default function Calendar({
     if (draggedTransport && draggedTransport.date !== targetDate) {
       onUpdateTransport(draggedTransport.id, {
         date: targetDate,
-        time: draggedTransport.time,
+        startTime: draggedTransport.startTime,
+        endTime: draggedTransport.endTime,
         userId: draggedTransport.userId,
         driverId: draggedTransport.driverId,
         destinationId: draggedTransport.destinationId,
+        isRecurring: draggedTransport.isRecurring,
+        recurringType: draggedTransport.recurringType,
+        recurringEndDate: draggedTransport.recurringEndDate,
         notes: draggedTransport.notes || ''
       });
     }
@@ -168,7 +172,7 @@ export default function Calendar({
                   onDragEnd={handleDragEnd}
                   onClick={(e) => handleTransportClick(transport, e)}
                 >
-                  {transport.time} {user?.name}
+                  {transport.startTime} {user?.name}
                 </div>
               );
             })}
@@ -238,7 +242,7 @@ export default function Calendar({
                   onDragEnd={handleDragEnd}
                   onClick={(e) => handleTransportClick(transport, e)}
                 >
-                  {transport.time} {user?.name}
+                  {transport.startTime} {user?.name}
                 </div>
               );
             })}
@@ -265,7 +269,7 @@ export default function Calendar({
           </div>
         )}
         {dayTransports
-          .sort((a, b) => a.time.localeCompare(b.time))
+          .sort((a, b) => a.startTime.localeCompare(b.startTime))
           .map((transport) => {
             const user = users.find(u => u.id === transport.userId);
             const destination = destinations.find(d => d.id === transport.destinationId);
@@ -279,9 +283,17 @@ export default function Calendar({
                 onClick={(e) => handleTransportClick(transport, e)}
                 title="Clicca per modificare"
               >
-                <div className="font-bold text-lg">{transport.time}</div>
+                <div className="font-bold text-lg">
+                  {transport.startTime}
+                  {transport.endTime && ` - ${transport.endTime}`}
+                </div>
                 <div><strong>Utente:</strong> {user?.name}</div>
                 <div><strong>Destinazione:</strong> {destination?.name}</div>
+                {transport.isRecurring && (
+                  <div className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded mt-1 inline-block">
+                    Ricorrente ({transport.recurringType})
+                  </div>
+                )}
                 {transport.notes && <div><strong>Note:</strong> {transport.notes}</div>}
               </div>
             );

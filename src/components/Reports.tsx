@@ -47,7 +47,7 @@ export default function Reports({ transports, users, drivers, destinations }: Re
           const driver = drivers.find(d => d.id === t.driverId);
           return {
             date: t.date,
-            time: t.time,
+            time: t.startTime,
             destination: destination?.name || 'N/A',
             cost: destination?.cost || 0,
             driver: driver?.name || 'N/A'
@@ -72,7 +72,7 @@ export default function Reports({ transports, users, drivers, destinations }: Re
           const destination = destinations.find(d => d.id === t.destinationId);
           return {
             date: t.date,
-            time: t.time,
+            time: t.startTime,
             user: user?.name || 'N/A',
             destination: destination?.name || 'N/A',
             cost: destination?.cost || 0

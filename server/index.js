@@ -91,6 +91,8 @@ const initializeSchema = async (pool) => {
         name NVARCHAR(255) NOT NULL,
         phone NVARCHAR(50),
         address NVARCHAR(500),
+        city NVARCHAR(100),
+        province NVARCHAR(100),
         notes NVARCHAR(1000),
         createdAt DATETIME2 DEFAULT GETDATE()
       )
@@ -126,17 +128,20 @@ const initializeSchema = async (pool) => {
     await pool.request().query(`
       IF EXISTS (SELECT * FROM sysobjects WHERE name='Transports' AND xtype='U')
       BEGIN
-        IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
-                   WHERE TABLE_NAME = 'Transports' AND COLUMN_NAME = 'time' 
-                   AND DATA_TYPE = 'time')
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                       WHERE TABLE_NAME = 'Transports' AND COLUMN_NAME = 'startTime')
         BEGIN
           CREATE TABLE Transports_New (
             id NVARCHAR(50) PRIMARY KEY,
             date DATE NOT NULL,
-            time NVARCHAR(8) NOT NULL,
+            startTime NVARCHAR(8) NOT NULL,
+            endTime NVARCHAR(8),
             userId NVARCHAR(50) NOT NULL,
             driverId NVARCHAR(50) NOT NULL,
             destinationId NVARCHAR(50) NOT NULL,
+            isRecurring BIT DEFAULT 0,
+            recurringType NVARCHAR(20),
+            recurringEndDate DATE,
             notes NVARCHAR(1000),
             createdAt DATETIME2 DEFAULT GETDATE(),
             FOREIGN KEY (userId) REFERENCES Users(id) ON DELETE CASCADE,
@@ -144,9 +149,13 @@ const initializeSchema = async (pool) => {
             FOREIGN KEY (destinationId) REFERENCES Destinations(id) ON DELETE CASCADE
           );
           
-          INSERT INTO Transports_New (id, date, time, userId, driverId, destinationId, notes, createdAt)
+          INSERT INTO Transports_New (id, date, startTime, userId, driverId, destinationId, notes, createdAt)
           SELECT id, date, 
-                 FORMAT(CAST(time AS TIME), 'HH\\:mm') as time,
+                 CASE 
+                   WHEN COLUMNPROPERTY(OBJECT_ID('Transports'), 'time', 'ColumnId') IS NOT NULL 
+                   THEN FORMAT(CAST(time AS TIME), 'HH\\:mm') 
+                   ELSE startTime 
+                 END as startTime,
                  userId, driverId, destinationId, notes, createdAt
           FROM Transports;
           
@@ -159,10 +168,14 @@ const initializeSchema = async (pool) => {
         CREATE TABLE Transports (
           id NVARCHAR(50) PRIMARY KEY,
           date DATE NOT NULL,
-          time NVARCHAR(8) NOT NULL,
+          startTime NVARCHAR(8) NOT NULL,
+          endTime NVARCHAR(8),
           userId NVARCHAR(50) NOT NULL,
           driverId NVARCHAR(50) NOT NULL,
           destinationId NVARCHAR(50) NOT NULL,
+          isRecurring BIT DEFAULT 0,
+          recurringType NVARCHAR(20),
+          recurringEndDate DATE,
           notes NVARCHAR(1000),
           createdAt DATETIME2 DEFAULT GETDATE(),
           FOREIGN KEY (userId) REFERENCES Users(id) ON DELETE CASCADE,
@@ -568,7 +581,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
 
 app.post('/api/users', authenticateToken, async (req, res) => {
   try {
-    const { name, phone, address, notes } = req.body;
+    const { name, phone, address, city, province, notes } = req.body;
     const id = generateId();
     const pool = await poolPromise;
     
@@ -577,8 +590,10 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       .input('name', sql.NVarChar, name)
       .input('phone', sql.NVarChar, phone || null)
       .input('address', sql.NVarChar, address || null)
+      .input('city', sql.NVarChar, city || null)
+      .input('province', sql.NVarChar, province || null)
       .input('notes', sql.NVarChar, notes || null)
-      .query('INSERT INTO Users (id, name, phone, address, notes) VALUES (@id, @name, @phone, @address, @notes)');
+      .query('INSERT INTO Users (id, name, phone, address, city, province, notes) VALUES (@id, @name, @phone, @address, @city, @province, @notes)');
     
     const result = await pool.request()
       .input('id', sql.NVarChar, id)
@@ -594,7 +609,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 app.put('/api/users/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, address, notes } = req.body;
+    const { name, phone, address, city, province, notes } = req.body;
     const pool = await poolPromise;
     
     await pool.request()
@@ -602,8 +617,10 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
       .input('name', sql.NVarChar, name)
       .input('phone', sql.NVarChar, phone || null)
       .input('address', sql.NVarChar, address || null)
+      .input('city', sql.NVarChar, city || null)
+      .input('province', sql.NVarChar, province || null)
       .input('notes', sql.NVarChar, notes || null)
-      .query('UPDATE Users SET name = @name, phone = @phone, address = @address, notes = @notes WHERE id = @id');
+      .query('UPDATE Users SET name = @name, phone = @phone, address = @address, city = @city, province = @province, notes = @notes WHERE id = @id');
     
     const result = await pool.request()
       .input('id', sql.NVarChar, id)
@@ -792,7 +809,7 @@ app.delete('/api/destinations/:id', authenticateToken, async (req, res) => {
 app.get('/api/transports', authenticateToken, async (req, res) => {
   try {
     const pool = await poolPromise;
-    const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, time DESC');
+    const result = await pool.request().query('SELECT * FROM Transports ORDER BY date DESC, startTime DESC');
     
     // Format dates consistently
     const formattedTransports = result.recordset.map(transport => ({
@@ -809,36 +826,73 @@ app.get('/api/transports', authenticateToken, async (req, res) => {
 
 app.post('/api/transports', authenticateToken, async (req, res) => {
   try {
-    const { date, time, userId, driverId, destinationId, notes } = req.body;
-    const id = generateId();
+    const { date, startTime, endTime, userId, driverId, destinationId, isRecurring, recurringType, recurringEndDate, notes } = req.body;
     const pool = await poolPromise;
     
-    const formattedTime = validateAndFormatTime(time);
-    if (!formattedTime) {
+    const formattedStartTime = validateAndFormatTime(startTime);
+    if (!formattedStartTime) {
       return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
     
-    await pool.request()
-      .input('id', sql.NVarChar, id)
-      .input('date', sql.Date, date)
-      .input('time', sql.NVarChar, formattedTime)
-      .input('userId', sql.NVarChar, userId)
-      .input('driverId', sql.NVarChar, driverId)
-      .input('destinationId', sql.NVarChar, destinationId)
-      .input('notes', sql.NVarChar, notes || null)
-      .query('INSERT INTO Transports (id, date, time, userId, driverId, destinationId, notes) VALUES (@id, @date, @time, @userId, @driverId, @destinationId, @notes)');
+    const formattedEndTime = endTime ? validateAndFormatTime(endTime) : null;
     
-    const result = await pool.request()
-      .input('id', sql.NVarChar, id)
-      .query('SELECT * FROM Transports WHERE id = @id');
-    
-    const transport = result.recordset[0];
-    const formattedTransport = {
-      ...transport,
-      date: formatDateForOutput(transport.date)
+    const createTransport = async (transportDate) => {
+      const id = generateId();
+      await pool.request()
+        .input('id', sql.NVarChar, id)
+        .input('date', sql.Date, transportDate)
+        .input('startTime', sql.NVarChar, formattedStartTime)
+        .input('endTime', sql.NVarChar, formattedEndTime)
+        .input('userId', sql.NVarChar, userId)
+        .input('driverId', sql.NVarChar, driverId)
+        .input('destinationId', sql.NVarChar, destinationId)
+        .input('isRecurring', sql.Bit, isRecurring || false)
+        .input('recurringType', sql.NVarChar, recurringType || null)
+        .input('recurringEndDate', sql.Date, recurringEndDate || null)
+        .input('notes', sql.NVarChar, notes || null)
+        .query('INSERT INTO Transports (id, date, startTime, endTime, userId, driverId, destinationId, isRecurring, recurringType, recurringEndDate, notes) VALUES (@id, @date, @startTime, @endTime, @userId, @driverId, @destinationId, @isRecurring, @recurringType, @recurringEndDate, @notes)');
+      return id;
     };
     
-    res.status(201).json(formattedTransport);
+    const createdIds = [];
+    
+    if (isRecurring && recurringType && recurringEndDate) {
+      const startDate = new Date(date);
+      const endDate = new Date(recurringEndDate);
+      const currentDate = new Date(startDate);
+      
+      while (currentDate <= endDate) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const id = await createTransport(dateStr);
+        createdIds.push(id);
+        
+        switch (recurringType) {
+          case 'daily':
+            currentDate.setDate(currentDate.getDate() + 1);
+            break;
+          case 'weekly':
+            currentDate.setDate(currentDate.getDate() + 7);
+            break;
+          case 'monthly':
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            break;
+        }
+      }
+    } else {
+      const id = await createTransport(date);
+      createdIds.push(id);
+    }
+    
+    const result = await pool.request()
+      .input('ids', sql.NVarChar, createdIds.join(','))
+      .query(`SELECT * FROM Transports WHERE id IN (${createdIds.map(() => '?').join(',')})`, createdIds);
+    
+    const transports = result.recordset.map(transport => ({
+      ...transport,
+      date: formatDateForOutput(transport.date)
+    }));
+    
+    res.status(201).json(transports.length === 1 ? transports[0] : transports);
   } catch (error) {
     console.error('Error creating transport:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -848,23 +902,29 @@ app.post('/api/transports', authenticateToken, async (req, res) => {
 app.put('/api/transports/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { date, time, userId, driverId, destinationId, notes } = req.body;
+    const { date, startTime, endTime, userId, driverId, destinationId, isRecurring, recurringType, recurringEndDate, notes } = req.body;
     const pool = await poolPromise;
     
-    const formattedTime = validateAndFormatTime(time);
-    if (!formattedTime) {
+    const formattedStartTime = validateAndFormatTime(startTime);
+    if (!formattedStartTime) {
       return res.status(400).json({ error: 'Formato orario non valido. Usa il formato HH:MM (es: 14:30)' });
     }
+    
+    const formattedEndTime = endTime ? validateAndFormatTime(endTime) : null;
     
     await pool.request()
       .input('id', sql.NVarChar, id)
       .input('date', sql.Date, date)
-      .input('time', sql.NVarChar, formattedTime)
+      .input('startTime', sql.NVarChar, formattedStartTime)
+      .input('endTime', sql.NVarChar, formattedEndTime)
       .input('userId', sql.NVarChar, userId)
       .input('driverId', sql.NVarChar, driverId)
       .input('destinationId', sql.NVarChar, destinationId)
+      .input('isRecurring', sql.Bit, isRecurring || false)
+      .input('recurringType', sql.NVarChar, recurringType || null)
+      .input('recurringEndDate', sql.Date, recurringEndDate || null)
       .input('notes', sql.NVarChar, notes || null)
-      .query('UPDATE Transports SET date = @date, time = @time, userId = @userId, driverId = @driverId, destinationId = @destinationId, notes = @notes WHERE id = @id');
+      .query('UPDATE Transports SET date = @date, startTime = @startTime, endTime = @endTime, userId = @userId, driverId = @driverId, destinationId = @destinationId, isRecurring = @isRecurring, recurringType = @recurringType, recurringEndDate = @recurringEndDate, notes = @notes WHERE id = @id');
     
     const result = await pool.request()
       .input('id', sql.NVarChar, id)

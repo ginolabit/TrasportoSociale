@@ -16,6 +16,8 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
     name: '',
     phone: '',
     address: '',
+    city: '',
+    province: '',
     notes: ''
   });
 
@@ -33,7 +35,7 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
       onAddUser(formData);
     }
     
-    setFormData({ name: '', phone: '', address: '', notes: '' });
+    setFormData({ name: '', phone: '', address: '', city: '', province: '', notes: '' });
     setShowForm(false);
   };
 
@@ -43,6 +45,8 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
       name: user.name,
       phone: user.phone || '',
       address: user.address || '',
+      city: user.city || '',
+      province: user.province || '',
       notes: user.notes || ''
     });
     setShowForm(true);
@@ -57,7 +61,7 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
   const handleCancel = () => {
     setShowForm(false);
     setEditingUser(null);
-    setFormData({ name: '', phone: '', address: '', notes: '' });
+    setFormData({ name: '', phone: '', address: '', city: '', province: '', notes: '' });
   };
 
   return (
@@ -88,6 +92,9 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
                   Indirizzo
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Città/Provincia
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Note
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -98,7 +105,7 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
             <tbody className="bg-white divide-y divide-gray-200">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                     Nessun utente registrato
                   </td>
                 </tr>
@@ -126,6 +133,11 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
                             <span className="break-words">{user.address}</span>
                           </>
                         )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900">
+                        {user.city && user.province ? `${user.city} (${user.province})` : user.city || user.province || ''}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -202,6 +214,32 @@ export default function Users({ users, onAddUser, onUpdateUser, onDeleteUser }: 
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows={2}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Città
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Provincia
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.province}
+                    onChange={(e) => setFormData({ ...formData, province: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="es. MI, RM, TO"
+                  />
+                </div>
               </div>
 
               <div>

@@ -3,6 +3,8 @@ export interface User {
   name: string;
   phone?: string;
   address?: string;
+  city?: string;
+  province?: string;
   notes?: string;
   createdAt: string;
 }
@@ -28,10 +30,14 @@ export interface Destination {
 export interface Transport {
   id: string;
   date: string;
-  time: string;
+  startTime: string;
+  endTime?: string;
   userId: string;
   driverId: string;
   destinationId: string;
+  isRecurring?: boolean;
+  recurringType?: 'daily' | 'weekly' | 'monthly';
+  recurringEndDate?: string;
   notes?: string;
   createdAt: string;
 }
